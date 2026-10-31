@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="DisasterReady is a disaster awareness, preparedness, and relief platform focused on prevention, action and recovery."
+    />
+    <title>DisasterReady | Beyond Awareness. Towards Action.</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container nav-wrapper">
+        <a href="#top" class="brand" aria-label="DisasterReady home">
+          <img class="brand-mark" src="assets/disasterready-shield.png" alt="" />
+          <span class="brand-text">
+            <span class="brand-name-primary">Disaster</span>
+            <span class="brand-name-accent">Ready</span>
+          </span>
+        </a>
+
+        <nav class="main-nav" aria-label="Main navigation">
+          <a href="#top">Home</a>
+          <a href="#awareness">Disaster Awareness</a>
+          <a href="#hazard-map">Hazard Map</a>
+          <a href="#preparedness">Preparedness</a>
+          <a href="#ai">AI in Disaster Management</a>
+          <a href="#relief">Relief &amp; Donations</a>
+          <a href="#community">Get Involved</a>
+        </nav>
+
+        <a class="button button-primary nav-cta" href="#donation-finder">Support a Cause</a>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-overlay"></div>
+        <div class="container hero-content">
+          <div class="hero-copy">
+            <p class="eyebrow">Disaster management for every community</p>
+            <h1>WHEN DISASTER STRIKES, PREPAREDNESS SAVES LIVES.</h1>
+            <p class="hero-text">
+              Understand disasters, prepare for emergencies, discover how technology can help save lives,
+              and support communities rebuilding after tragedy.
+            </p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="#awareness">Explore Disasters</a>
+              <a class="button button-secondary" href="#preparedness">Learn Emergency Preparedness</a>
+              <a class="button button-tertiary" href="#donation-finder">Support a Cause</a>
+            </div>
+            <div class="stage-flow" aria-label="Four stages of disaster readiness">
+              <span>Understand</span>
+              <span class="arrow">→</span>
+              <span>Prepare</span>
+              <span class="arrow">→</span>
+              <span>Respond</span>
+              <span class="arrow">→</span>
+              <span>Recover</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="impact-strip">
+        <div class="container impact-grid">
+          <div>
+            <strong>8</strong>
+            <span>major disaster categories explained</span>
+          </div>
+          <div>
+            <strong>4-step</strong>
+            <span>preparedness framework</span>
+          </div>
+          <div>
+            <strong>Official</strong>
+            <span>resource links and verified pathways</span>
+          </div>
+          <div>
+            <strong>Action</strong>
+            <span>driven recovery and support</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-section" id="awareness">
+        <div class="container">
+          <div class="section-heading">
+            <p class="eyebrow eyebrow-dark">Disaster awareness</p>
+            <h2>Know the Disasters. Understand the Risks.</h2>
+          </div>
+          <div class="disaster-grid" id="disaster-grid"></div>
+        </div>
+      </section>
+
+      <section class="content-section section-alt" id="hazard-map">
+        <div class="container">
+          <div class="section-heading">
+            <p class="eyebrow eyebrow-dark">Explore hazard patterns</p>
+            <h2>Where Disasters Can Occur</h2>
+            <p class="map-intro">
+              Explore curated disaster pins in India and approximate hazard regions around the world. Filter by
+              category, severity, and time period, then click a pin or region for event details. Fault lines shows
+              selected major and minor plate names alongside generalized global fault and plate-boundary traces.
+            </p>
+          </div>
+
+          <div class="hazard-map-layout">
+            <div class="hazard-map-panel">
+              <div id="hazard-map-regions" class="hazard-map-regions" role="group" aria-label="Choose map region">
+                <button class="hazard-filter" type="button" data-map-region="india" aria-pressed="true">India</button>
+                <button class="hazard-filter" type="button" data-map-region="world" aria-pressed="false">World</button>
+                <button class="hazard-filter" type="button" data-map-region="faults" aria-pressed="false">Fault / plate map</button>
+              </div>
+              <div id="hazard-map-filter-options" class="hazard-map-filter-options">
+                <label>
+                  Severity
+                  <select id="hazard-map-severity" aria-label="Filter by severity">
+                    <option value="all">All severities</option>
+                    <option value="Low">Low</option>
+                    <option value="Moderate">Moderate</option>
+                    <option value="High">High</option>
+                    <option value="Severe">Severe</option>
+                  </select>
+                </label>
+                <label>
+                  Time period
+                  <select id="hazard-map-period" aria-label="Filter by time period">
+                    <option value="all">All recorded years</option>
+                    <option value="2020">2020–present</option>
+                    <option value="2010">2010–2019</option>
+                    <option value="before-2010">Before 2010</option>
+                  </select>
+                </label>
+                <label class="hazard-active-filter">
+                  <input id="hazard-map-active" type="checkbox" />
+                  Active regions only
+                </label>
+              </div>
+              <div id="hazard-map-filters" class="hazard-map-filters" role="group" aria-label="Filter map by disaster type"></div>
+              <div id="hazard-map-tectonic-legend" class="hazard-map-tectonic-legend" aria-label="Tectonic boundary legend" hidden>
+                <span><i class="tectonic-boundary-swatch convergent"></i>Convergent / subduction</span>
+                <span><i class="tectonic-boundary-swatch divergent"></i>Divergent / spreading</span>
+                <span><i class="tectonic-boundary-swatch transform"></i>Transform / strike-slip</span>
+                <small>Major and selected minor plate names are labeled on the map.</small>
+              </div>
+              <div
+                id="hazard-map-canvas"
+                class="hazard-map-canvas"
+                role="application"
+                aria-label="Interactive map with India disaster pins, global regional overlays, and tectonic plate boundaries"
+              ></div>
+              <p id="hazard-map-status" class="hazard-map-status" role="status" aria-live="polite">
+                Loading map...
+              </p>
+            </div>
+
+            <aside class="hazard-map-info">
+              <p class="eyebrow eyebrow-dark">Map guide</p>
+              <h3 id="hazard-map-info-title">Explore the regions</h3>
+              <p id="hazard-map-info-copy">
+                Select a filled region to see the documented example events and geographic context.
+              </p>
+              <div id="hazard-map-info-detail" class="hazard-map-info-detail">
+                <div class="hazard-map-stat-grid">
+                    <div><strong id="hazard-map-event-count">—</strong><span id="hazard-map-count-label">sample events</span></div>
+                    <div><strong id="hazard-map-event-severity">—</strong><span id="hazard-map-severity-label">severity</span></div>
+                    <div><strong id="hazard-map-event-period">—</strong><span id="hazard-map-period-label">time period</span></div>
+                </div>
+                <p id="hazard-map-info-context"></p>
+                  <h4 id="hazard-map-event-list-heading">Documented examples</h4>
+                <ul id="hazard-map-event-list" class="hazard-map-event-list"></ul>
+              </div>
+              <div class="map-disclaimer">
+                <strong>Regional awareness layer—not live monitoring</strong>
+                <p>
+                  India pins mark approximate locations of selected curated historical events; world polygons and
+                  tectonic traces and plate labels are generalized references, not official hazard footprints,
+                  surveyed fault traces, or a complete fault inventory. Event counts cover only examples shown.
+                  No live event feed is connected; “active only” shows only records explicitly marked active.
+                </p>
+              </div>
+              <p class="map-source">
+                Map tiles © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>.
+              </p>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-section section-alt" id="preparedness">
+        <div class="container">
+          <div class="section-heading">
+            <p class="eyebrow eyebrow-dark">Emergency preparedness</p>
+            <h2>Prepared Today. Safer Tomorrow.</h2>
+          </div>
+          <div class="preparedness-grid">
+            <article class="info-card orange">
+              <span class="card-tag">Before</span>
+              <h3>Before a disaster</h3>
+              <p>Build an emergency kit, store water, plan evacuation routes, and communicate with family.</p>
+            </article>
+            <article class="info-card blue">
+              <span class="card-tag">During</span>
+              <h3>During a disaster</h3>
+              <p>Follow official warnings, stay away from unsafe zones, and protect your household and neighbourhood.</p>
+            </article>
+            <article class="info-card green">
+              <span class="card-tag">After</span>
+              <h3>After a disaster</h3>
+              <p>Check for injuries, avoid damaged structures, listen to official advisories, and reconnect safely.</p>
+            </article>
+          </div>
+
+          <div class="preparedness-layout">
+            <div class="checklist-panel">
+              <div class="panel-header">
+                <h3>Emergency Kit Checklist</h3>
+                <span id="checklist-progress">0% ready</span>
+              </div>
+              <ul class="checklist" id="checklist"></ul>
+              <a class="button button-primary" href="emergency-kit-guide.txt" download>Download Emergency Kit Guide</a>
+            </div>
+
+            <div class="guide-panel">
+              <div class="panel-header">
+                <h3>Safety Guide by Disaster</h3>
+                <select id="disaster-select" aria-label="Select disaster type">
+                  <option value="flood">Floods</option>
+                  <option value="earthquake">Earthquakes</option>
+                  <option value="cyclone">Cyclones</option>
+                  <option value="wildfire">Wildfires</option>
+                  <option value="drought">Droughts</option>
+                  <option value="landslide">Landslides</option>
+                  <option value="tsunami">Tsunamis</option>
+                  <option value="industrial">Industrial and chemical accidents</option>
+                </select>
+              </div>
+              <div id="safety-guide" class="safety-guide"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-section" id="emergency-contacts">
+        <div class="container">
+          <div class="section-heading">
+            <p class="eyebrow eyebrow-dark">Emergency contacts</p>
+            <h2>Official Help and Information</h2>
+          </div>
+
+          <div class="contact-grid">
+            <article class="contact-card">
+              <h3>Emergency response</h3>
+              <p>Call 112 for emergency assistance in India.</p>
+              <a href="tel:112">Dial 112</a>
+            </article>
+            <article class="contact-card">
+              <h3>National Disaster Management Authority</h3>
+              <p>Official guidance, advisories, and disaster preparedness information.</p>
+              <a href="https://ndma.gov.in/" target="_blank" rel="noreferrer">Visit NDMA</a>
+            </article>
+            <article class="contact-card">
+              <h3>India Meteorological Department</h3>
+              <p>Weather warnings, cyclones, rainfall alerts, and public advisories.</p>
+              <a href="https://mausam.imd.gov.in/" target="_blank" rel="noreferrer">Visit IMD</a>
+            </article>
+            <article class="contact-card">
+              <h3>National Disaster Response Force</h3>
+              <p>Official response coordination and disaster management updates.</p>
+              <a href="https://ndrf.gov.in/" target="_blank" rel="noreferrer">Visit NDRF</a>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-section" id="ai">
+        <div class="container">
+          <div class="section-heading">
+            <p class="eyebrow eyebrow-dark">AI and disaster response</p>
+            <h2>Technology That Helps Save Lives.</h2>
+          </div>
+
+          <div class="ai-grid">
+            <article class="ai-card">
+              <h3>AI for Flood Prediction</h3>
+              <p><strong>Problem:</strong> Floods can escalate rapidly when rainfall, river levels, and storm patterns change together.</p>
+              <p><strong>Use:</strong> Machine learning analyses rainfall, river gauges, weather models, and historical floods to support early warning and evacuation planning.</p>
+              <p><strong>Benefits:</strong> Faster alerts and better preparation.</p>
+              <p><strong>Limitations:</strong> Forecasts are uncertain and need local expert validation.</p>
+              <p><strong>Human role:</strong> Disaster management teams interpret warnings and guide evacuations.</p>
+            </article>
+
+            <article class="ai-card">
+              <h3>AI for Wildfire Detection</h3>
+              <p><strong>Problem:</strong> Forest fires spread quickly and can be hard to detect early.</p>
+              <p><strong>Use:</strong> Satellite imagery, drones, and computer vision monitor hotspots and fire fronts.</p>
+              <p><strong>Benefits:</strong> Faster detection and better situational awareness.</p>
+              <p><strong>Limitations:</strong> Weather, smoke, and poor image quality can reduce accuracy.</p>
+              <p><strong>Human role:</strong> Fire crews verify risks and manage response in the field.</p>
+            </article>
+
+            <article class="ai-card">
+              <h3>AI for Earthquake Risk Assessment</h3>
+              <p><strong>Problem:</strong> Earthquakes are difficult to predict with precise timing and location.</p>
+              <p><strong>Use:</strong> AI analyses seismic patterns, fault activity, and structural risk information.</p>
+              <p><strong>Benefits:</strong> Improved monitoring, risk mapping, and post-event assessment.</p>
+              <p><strong>Limitations:</strong> AI cannot reliably predict the exact time and place of an earthquake.</p>
+              <p><strong>Human role:</strong> Seismologists and local agencies combine data with field judgment.</p>
+            </article>
+
+            <article class="ai-card">
+              <h3>AI for Disaster Damage Assessment</h3>
+              <p><strong>Problem:</strong> Access to damaged zones may be limited after a disaster.</p>
+              <p><strong>Use:</strong> Computer vision and satellite images help identify damaged buildings, roads, and flooded areas.</p>
+              <p><strong>Benefits:</strong> Faster reporting of infrastructure damage and priority needs.</p>
+              <p><strong>Limitations:</strong> Image quality and missing ground truth can lead to errors.</p>
+              <p><strong>Human role:</strong> Responders validate findings on the ground.</p>
+            </article>
+
+            <article class="ai-card">
+              <h3>AI for Rescue Operations</h3>
+              <p><strong>Problem:</strong> Responders need to move fast while prioritising areas based on urgent need.</p>
+              <p><strong>Use:</strong> Optimisation models help identify accessible routes, allocate vehicles, and prioritise search zones.</p>
+              <p><strong>Benefits:</strong> Better resource deployment and faster response.</p>
+              <p><strong>Limitations:</strong> Models rely on incomplete or changing field conditions.</p>
+              <p><strong>Human role:</strong> Command centres and rescue teams make final decisions.</p>
+            </article>
+
+            <article class="ai-card">
+              <h3>AI for Relief Distribution</h3>
+              <p><strong>Problem:</strong> Delivering food, water, medicine, and shelter must match urgent needs.</p>
+              <p><strong>Use:</strong> AI-assisted logistics helps connect demand, inventory, and route planning.</p>
+              <p><strong>Benefits:</strong> More efficient aid delivery and reduced waste.</p>
+              <p><strong>Limitations:</strong> Data gaps and inequities can exclude vulnerable communities.</p>
+              <p><strong>Human role:</strong> Aid agencies and local leaders ensure fair and humane distribution.</p>
+            </article>
+          </div>
+
+          <div class="ai-note">
+            <h3>Responsible Limits</h3>
+            <ul>
+              <li>AI predictions are never perfectly accurate and should never be treated as absolute truth.</li>
+              <li>Poor-quality or incomplete data can produce misleading results.</li>
+              <li>Technology cannot replace trained responders, medical teams, and local authorities.</li>
+              <li>Human oversight is essential in every step of disaster management.</li>
+              <li>Digital systems must be designed to include vulnerable communities and avoid exclusion.</li>
+            </ul>
+          </div>
+
+          <div class="text-center">
+            <a class="button button-primary" href="#donation-finder">Explore AI Applications</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-section section-relief" id="relief">
+        <div class="container relief-banner">
+          <div class="relief-copy">
+            <p class="eyebrow">Help communities recover</p>
+            <h2>Your Support Can Rebuild Lives.</h2>
+            <p>
+              Behind every disaster are people, families, and communities who need support. Discover causes you
+              can contribute to and help them recover.
+            </p>
+            <a class="button button-primary" href="#donation-finder">Find a Cause to Support</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-section" id="donation-finder">
+        <div class="container">
+          <div class="section-heading">
+            <p class="eyebrow eyebrow-dark">Donation finder</p>
+            <h2>Organisations Supporting Your Selected Cause</h2>
+          </div>
+
+          <div class="finder-card">
+            <div class="finder-progress" id="finder-progress">
+              <span class="is-active">1</span>
+              <span>2</span>
+              <span>3</span>
+              <span>4</span>
+            </div>
+
+            <div id="finder-step-1" class="finder-step active">
+              <h3>Step 1: Select a community</h3>
+              <div class="option-grid" id="community-options"></div>
+            </div>
+
+            <div id="finder-step-2" class="finder-step">
+              <h3>Step 2: Select a disaster</h3>
+              <div class="option-grid" id="disaster-options"></div>
+            </div>
+
+            <div id="finder-step-3" class="finder-step">
+              <h3>Step 3: Select the type of assistance</h3>
+              <div class="option-grid" id="assistance-options"></div>
+            </div>
+
+            <div id="finder-step-4" class="finder-step">
+              <h3>Step 4: Matching donation organisations</h3>
+              <div id="org-results" class="org-results"></div>
+            </div>
+
+            <div class="finder-actions">
+              <button class="button button-secondary" id="back-step" type="button">Back</button>
+              <button class="button button-primary" id="next-step" type="button">Continue</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-section section-alt" id="community">
+        <div class="container">
+          <div class="section-heading">
+            <p class="eyebrow eyebrow-dark">Community action</p>
+            <h2>Together, We Can Make a Difference.</h2>
+          </div>
+
+          <div class="community-grid">
+            <article class="community-card">
+              <h3>Volunteer Opportunities</h3>
+              <ul>
+                <li>Food distribution</li>
+                <li>Medical assistance</li>
+                <li>Community awareness</li>
+                <li>Rehabilitation activities</li>
+              </ul>
+            </article>
+
+            <article class="community-card">
+              <h3>Awareness Campaigns</h3>
+              <ul>
+                <li>Flood safety</li>
+                <li>Earthquake preparedness</li>
+                <li>Fire prevention</li>
+                <li>Climate-related disaster risks</li>
+              </ul>
+            </article>
+
+            <article class="community-card">
+              <h3>Community Education</h3>
+              <ul>
+                <li>Safety guides</li>
+                <li>Awareness posters</li>
+                <li>School preparedness resources</li>
+                <li>Family emergency planning</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-section" id="updates">
+        <div class="container">
+          <div class="section-heading">
+            <p class="eyebrow eyebrow-dark">Live updates &amp; official information</p>
+            <h2>Disaster Information and Public Alerts</h2>
+          </div>
+
+          <div class="updates-grid">
+            <article class="update-card live">
+              <span class="status-pill">Live verified alerts</span>
+              <h3>Weather and Cyclone Warnings</h3>
+              <p>Check IMD and state disaster management agencies for real-time forecasts and advisories before travel or evacuation planning.</p>
+              <a href="https://mausam.imd.gov.in/" target="_blank" rel="noreferrer">Visit IMD</a>
+            </article>
+
+            <article class="update-card historic">
+              <span class="status-pill">Historical information</span>
+              <h3>Preparedness planning</h3>
+              <p>Study past disaster patterns to improve local risk maps, evacuation routes, and relief readiness.</p>
+              <a href="https://ndma.gov.in/" target="_blank" rel="noreferrer">View NDMA</a>
+            </article>
+
+            <article class="update-card educational">
+              <span class="status-pill">Educational</span>
+              <h3>Risk awareness</h3>
+              <p>Use official guidance to understand hazard zones, shelter plans, and alert systems in your area.</p>
+              <a href="https://ndrf.gov.in/" target="_blank" rel="noreferrer">Visit NDRF</a>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-grid">
+        <div>
+          <div class="brand footer-brand">
+            <img class="brand-mark" src="assets/disasterready-shield.png" alt="" />
+            <span class="brand-text">
+              <span class="brand-name-primary">Disaster</span>
+              <span class="brand-name-accent">Ready</span>
+            </span>
+          </div>
+          <p>
+            DisasterReady is an educational and awareness platform. It does not replace official emergency
+            services, government advisories, or professional disaster response organisations.
+          </p>
+        </div>
+
+        <div>
+          <h4>Quick links</h4>
+          <ul>
+            <li><a href="#awareness">Disaster Awareness</a></li>
+            <li><a href="#hazard-map">Hazard Map</a></li>
+            <li><a href="#preparedness">Preparedness</a></li>
+            <li><a href="#ai">AI in Disaster Management</a></li>
+            <li><a href="#donation-finder">Relief &amp; Donations</a></li>
+          </ul>
+        </div>
+
+        <div>
+          <h4>Official emergency info</h4>
+          <ul>
+            <li><a href="tel:112">Emergency Response: 112</a></li>
+            <li><a href="https://ndma.gov.in/" target="_blank" rel="noreferrer">NDMA</a></li>
+            <li><a href="https://mausam.imd.gov.in/" target="_blank" rel="noreferrer">IMD</a></li>
+            <li><a href="https://ndrf.gov.in/" target="_blank" rel="noreferrer">NDRF</a></li>
+          </ul>
+        </div>
+
+        <div>
+          <h4>Donation organisations</h4>
+          <ul>
+            <li><a href="https://indianredcross.org/" target="_blank" rel="noreferrer">Indian Red Cross Society</a></li>
+            <li><a href="https://goonj.org/" target="_blank" rel="noreferrer">Goonj</a></li>
+            <li><a href="https://www.habitatindia.org/" target="_blank" rel="noreferrer">Habitat for Humanity India</a></li>
+            <li><a href="https://www.ifrc.org/" target="_blank" rel="noreferrer">IFRC</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="container footer-meta">
+        <span>Privacy Policy</span>
+        <span>Terms and Conditions</span>
+        <span>Disclaimer</span>
+      </div>
+    </footer>
+
+    <div class="modal hidden" id="disaster-modal" aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal="true"></div>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <button class="modal-close" type="button" aria-label="Close information panel">×</button>
+        <div id="modal-content"></div>
+      </div>
+    </div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="hazard-map-data.js"></script>
+    <script src="script.js"></script>
+  </body>
+</html>
