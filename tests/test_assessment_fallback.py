@@ -36,6 +36,9 @@ class AssessmentFallbackTests(unittest.TestCase):
             [item.value for item in result.title],
             ["Disaster Image Analyzer"],
         )
+        markdown = "\n".join(item.value for item in result.markdown)
+        self.assertIn("disasterready-topbar", markdown)
+        self.assertIn("disasterready-upload-heading", markdown)
         self.assertEqual(
             [button.label for button in result.button if not button.disabled],
             [],

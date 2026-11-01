@@ -1389,6 +1389,32 @@ select {
   color: var(--navy);
 }
 
+.finder-guidance {
+  margin-bottom: 1rem;
+  padding: 1.15rem 1.25rem;
+  border: 1px solid rgba(243, 156, 53, 0.3);
+  border-radius: 18px;
+  background: rgba(243, 156, 53, 0.08);
+  color: var(--navy);
+}
+
+.finder-guidance h4 {
+  margin: 0 0 0.55rem;
+  font-size: 1rem;
+}
+
+.finder-guidance .finder-guidance-copy {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.finder-guidance p {
+  margin: 0.8rem 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 .empty-results {
   background: rgba(217, 75, 69, 0.05);
   border: 1px solid rgba(217, 75, 69, 0.15);

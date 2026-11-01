@@ -226,8 +226,7 @@ const organizations = [
     communities: ['rural', 'urban', 'children', 'women', 'homeless', 'general'],
     assistance: ['food-and-water', 'medical-assistance', 'temporary-shelters', 'rescue-and-evacuation', 'general-emergency-relief'],
     url: 'https://indianredcross.org/',
-    verified: 'Verified official donation page',
-    generalRelief: true
+    verified: 'Official organization website'
   },
   {
     name: 'Goonj',
@@ -238,8 +237,7 @@ const organizations = [
     communities: ['rural', 'urban', 'women', 'homeless', 'remote', 'general'],
     assistance: ['food-and-water', 'temporary-shelters', 'general-emergency-relief', 'education-and-rehabilitation'],
     url: 'https://goonj.org/',
-    verified: 'Verified official donation page',
-    generalRelief: true
+    verified: 'Official organization website'
   },
   {
     name: 'Habitat for Humanity India',
@@ -250,8 +248,7 @@ const organizations = [
     communities: ['rural', 'urban', 'homeless', 'general'],
     assistance: ['rebuilding-homes', 'temporary-shelters', 'general-emergency-relief'],
     url: 'https://www.habitatindia.org/',
-    verified: 'Verified official donation page',
-    generalRelief: true
+    verified: 'Official organization website'
   },
   {
     name: 'International Federation of Red Cross and Red Crescent Societies',
@@ -262,8 +259,7 @@ const organizations = [
     communities: ['rural', 'urban', 'children', 'women', 'remote', 'general'],
     assistance: ['medical-assistance', 'food-and-water', 'temporary-shelters', 'rescue-and-evacuation', 'general-emergency-relief'],
     url: 'https://www.ifrc.org/',
-    verified: 'Verified official donation page',
-    generalRelief: true
+    verified: 'Official organization website'
   },
   {
     name: 'UN Crisis Relief',
@@ -274,8 +270,7 @@ const organizations = [
     communities: ['children', 'women', 'homeless', 'remote', 'general'],
     assistance: ['food-and-water', 'medical-assistance', 'temporary-shelters', 'education-and-rehabilitation', 'general-emergency-relief'],
     url: 'https://crisisrelief.un.org/',
-    verified: 'Verified official donation page',
-    generalRelief: true
+    verified: 'Official organization website'
   },
   {
     name: 'National Disaster Response Fund / Government of India',
@@ -286,8 +281,62 @@ const organizations = [
     communities: ['rural', 'urban', 'farmers', 'remote', 'general'],
     assistance: ['food-and-water', 'temporary-shelters', 'rescue-and-evacuation', 'rebuilding-homes', 'general-emergency-relief'],
     url: 'https://ndma.gov.in/',
-    verified: 'Verified official donation page',
-    generalRelief: true
+    verified: 'Official organization website'
+  },
+  {
+    name: 'SEEDS India',
+    region: 'India',
+    logo: 'SEEDS',
+    description: 'Indian humanitarian organisation focused on disaster response, resilient recovery, shelter, and community preparedness.',
+    disasters: ['floods', 'earthquakes', 'cyclones', 'wildfires', 'droughts', 'landslides', 'tsunamis', 'industrial-accidents', 'general-disaster-relief'],
+    communities: ['rural', 'urban', 'children', 'women', 'farmers', 'homeless', 'remote', 'general'],
+    assistance: ['food-and-water', 'medical-assistance', 'temporary-shelters', 'rescue-and-evacuation', 'education-and-rehabilitation', 'rebuilding-homes', 'general-emergency-relief'],
+    url: 'https://www.seedsindia.org/donate/',
+    verified: 'Official donation and campaign page'
+  },
+  {
+    name: 'Bal Raksha Bharat (Save the Children India)',
+    region: 'India',
+    logo: 'BRB',
+    description: 'Supports child welfare in India, including education, protection, health, disaster relief, and emergency preparedness.',
+    disasters: ['floods', 'earthquakes', 'cyclones', 'droughts', 'landslides', 'general-disaster-relief'],
+    communities: ['children', 'women', 'homeless', 'rural', 'urban', 'remote'],
+    assistance: ['food-and-water', 'medical-assistance', 'temporary-shelters', 'education-and-rehabilitation', 'general-emergency-relief'],
+    url: 'https://balrakshabharat.org/donate/',
+    verified: 'Official donation page'
+  },
+  {
+    name: 'UN World Food Programme',
+    region: 'Global',
+    logo: 'WFP',
+    description: 'Provides emergency food assistance to people affected by conflict, hunger, droughts, floods, earthquakes, and other crises.',
+    disasters: ['floods', 'earthquakes', 'cyclones', 'wildfires', 'droughts', 'landslides', 'tsunamis', 'industrial-accidents', 'general-disaster-relief'],
+    communities: ['rural', 'urban', 'children', 'women', 'farmers', 'homeless', 'remote', 'general'],
+    assistance: ['food-and-water', 'general-emergency-relief'],
+    url: 'https://www.wfp.org/support-us',
+    verified: 'Official emergency-response donation page'
+  },
+  {
+    name: 'Direct Relief',
+    region: 'Global',
+    logo: 'DR',
+    description: 'Delivers medical aid and emergency health supplies to communities affected by disasters and other crises.',
+    disasters: ['floods', 'earthquakes', 'cyclones', 'wildfires', 'landslides', 'tsunamis', 'industrial-accidents', 'general-disaster-relief'],
+    communities: ['rural', 'urban', 'children', 'women', 'farmers', 'homeless', 'remote', 'general'],
+    assistance: ['medical-assistance', 'general-emergency-relief'],
+    url: 'https://www.directrelief.org/donate/',
+    verified: 'Official donation page'
+  },
+  {
+    name: 'UNHCR',
+    region: 'Global',
+    logo: 'UNHCR',
+    description: 'Supports refugees and displaced families with protection, shelter, basic needs, health care, and education.',
+    disasters: ['floods', 'earthquakes', 'cyclones', 'wildfires', 'droughts', 'landslides', 'tsunamis', 'industrial-accidents', 'general-disaster-relief'],
+    communities: ['children', 'women', 'homeless', 'remote'],
+    assistance: ['food-and-water', 'medical-assistance', 'temporary-shelters', 'education-and-rehabilitation', 'general-emergency-relief'],
+    url: 'https://donate.unhcr.org/',
+    verified: 'Official donation page'
   }
 ];
 
@@ -566,16 +615,61 @@ function getSelectedOrganizationMatches() {
     return [];
   }
 
-  const matched = organizations.filter((org) => {
-    const matchesCommunity = org.communities.includes(community) || org.communities.includes('general');
-    const matchesDisaster = org.disasters.includes(disaster) || org.disasters.includes('general-disaster-relief');
-    const matchesAssistance = org.assistance.includes(assistance) || org.assistance.includes('general-emergency-relief');
-    return matchesCommunity && matchesDisaster && matchesAssistance;
-  });
+  return organizations
+    .map((org) => {
+      const exactMatches = {
+        community: org.communities.includes(community),
+        disaster: org.disasters.includes(disaster),
+        assistance: org.assistance.includes(assistance)
+      };
+      const score = (
+        (exactMatches.assistance ? 5 : org.assistance.includes('general-emergency-relief') ? 1 : 0) +
+        (exactMatches.disaster ? 3 : org.disasters.includes('general-disaster-relief') ? 1 : 0) +
+        (exactMatches.community ? 2 : org.communities.includes('general') ? 1 : 0)
+      );
+      return { org, exactMatches, score };
+    })
+    .filter((match) => match.score > 0)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 3)
+    .map((match) => ({ ...match.org, exactMatches: match.exactMatches, matchScore: match.score }));
+}
 
-  if (matched.length) return matched;
+const donationGuidance = {
+  community: {
+    rural: 'Prioritize hard-to-reach village services and locally coordinated recovery.',
+    urban: 'Prioritize neighborhood-level relief, safe temporary shelter, and access to essential services.',
+    children: 'Prioritize child-safe spaces, protection, health, and continuity of education.',
+    women: 'Prioritize safe, accessible services and support designed with women and vulnerable groups.',
+    farmers: 'Prioritize livelihood recovery, agricultural inputs, and support for affected farming households.',
+    homeless: 'Prioritize safe shelter, essential supplies, and support for displaced families.',
+    remote: 'Prioritize locally led delivery that can reach isolated and tribal communities.',
+    general: 'Prioritize flexible relief that responds to the most urgent needs identified by affected communities.'
+  },
+  disaster: {
+    floods: 'For floods, clean water, sanitation, safe shelter, and recovery supplies are often urgent needs.',
+    earthquakes: 'After earthquakes, emergency medical care, safe shelter, and repair of damaged homes can be critical.',
+    cyclones: 'After cyclones, communities may need emergency shelter, medical support, clean water, and rebuilding help.',
+    wildfires: 'Wildfire response can require medical care, evacuation support, temporary shelter, and recovery assistance.',
+    droughts: 'Drought response often focuses on reliable water access, food security, and livelihood recovery.',
+    landslides: 'After landslides, urgent needs can include rescue, medical aid, shelter, and access to isolated communities.',
+    tsunamis: 'Tsunami recovery can require emergency medical care, safe shelter, clean water, and long-term rebuilding.',
+    'industrial-accidents': 'Industrial accidents may require medical response, safe shelter, and recovery support for affected residents.',
+    'general-disaster-relief': 'Flexible emergency relief helps address immediate needs as a response evolves.'
+  },
+  assistance: {
+    'food-and-water': 'Your selected focus is food and clean drinking water for affected people.',
+    'medical-assistance': 'Your selected focus is medical care, medicines, and emergency health supplies.',
+    'temporary-shelters': 'Your selected focus is safe temporary shelter and essential household supplies.',
+    'rescue-and-evacuation': 'Your selected focus is helping people reach safety and supporting emergency response.',
+    'education-and-rehabilitation': 'Your selected focus is restoring learning, protection, and rehabilitation services.',
+    'rebuilding-homes': 'Your selected focus is repairing homes and helping communities rebuild safely.',
+    'general-emergency-relief': 'Your selected focus is flexible emergency assistance for urgent and changing needs.'
+  }
+};
 
-  return organizations.filter((org) => org.generalRelief);
+function getDonationGuidance(group, value) {
+  return donationGuidance[group][value];
 }
 
 function getLabelForValue(group, value) {
@@ -599,20 +693,26 @@ function renderResults() {
   if (!results) return;
 
   const matched = getSelectedOrganizationMatches();
+  const selectedCommunityLabel = getLabelForValue('community', state.community);
+  const selectedDisasterLabel = getLabelForValue('disaster', state.disaster);
+  const selectedAssistanceLabel = getLabelForValue('assistance', state.assistance);
+  const guidance = [
+    getDonationGuidance('community', state.community),
+    getDonationGuidance('disaster', state.disaster),
+    getDonationGuidance('assistance', state.assistance)
+  ];
+  const personalizedRecommendation = `${selectedCommunityLabel} affected by ${selectedDisasterLabel} may need ${selectedAssistanceLabel.toLowerCase()}. ${guidance.join(' ')} When choosing, look for a current appeal that explicitly serves ${selectedCommunityLabel.toLowerCase()} affected by ${selectedDisasterLabel.toLowerCase()} and explains how donations support ${selectedAssistanceLabel.toLowerCase()}.`;
 
   if (matched.length === 0) {
     results.innerHTML = `
       <div class="empty-results">
-        <p><strong>No exact match was found for your selected preferences.</strong></p>
-        <p>We recommend starting with general disaster relief organisations that support emergency response and recovery.</p>
+        <p><strong>No listed organization currently matches your selected support focus.</strong></p>
+        <p>For ${selectedCommunityLabel.toLowerCase()} affected by ${selectedDisasterLabel.toLowerCase()}, you selected ${selectedAssistanceLabel.toLowerCase()}. ${guidance[2]}</p>
+        <p>Try a broader assistance option, or check official local government and established humanitarian organization websites for current appeals.</p>
       </div>
     `;
     return;
   }
-
-  const selectedCommunityLabel = getLabelForValue('community', state.community);
-  const selectedDisasterLabel = getLabelForValue('disaster', state.disaster);
-  const selectedAssistanceLabel = getLabelForValue('assistance', state.assistance);
 
   results.innerHTML = `
     <div class="finder-summary">
@@ -620,6 +720,11 @@ function renderResults() {
       <div><strong>Disaster:</strong> ${selectedDisasterLabel}</div>
       <div><strong>Assistance:</strong> ${selectedAssistanceLabel}</div>
     </div>
+    <aside class="finder-guidance">
+      <h4>Tailored to your answers</h4>
+      <p class="finder-guidance-copy">${personalizedRecommendation}</p>
+      <p>These are the three strongest matches in our directory, ranked by fit with your selections. Check each organization's current appeal and donation terms before contributing.</p>
+    </aside>
   `;
 
   results.innerHTML += matched.map((org) => `
@@ -631,11 +736,18 @@ function renderResults() {
         <div class="org-meta">
           <span class="meta-pill">${org.region}</span>
           <span class="meta-pill">${org.verified}</span>
+          <span class="meta-pill">${org.matchScore >= 8 ? 'Strong match' : org.matchScore >= 6 ? 'Relevant match' : 'General support'}</span>
         </div>
-        <p><strong>Why it matches:</strong> Supports ${selectedDisasterLabel.toLowerCase()} relief and assists ${selectedCommunityLabel.toLowerCase()} needs through ${selectedAssistanceLabel.toLowerCase()}.</p>
+        <p><strong>Why this site is in your shortlist:</strong> ${
+          [
+            org.exactMatches.assistance && `its listed programs include ${selectedAssistanceLabel.toLowerCase()}`,
+            org.exactMatches.community && `it serves ${selectedCommunityLabel.toLowerCase()}`,
+            org.exactMatches.disaster && `it lists work relevant to ${selectedDisasterLabel.toLowerCase()}`
+          ].filter(Boolean).join('; ') || 'it offers broad emergency support that may be relevant to your selections.'
+        }. Confirm that its current appeal covers your specific need before donating.</p>
       </div>
       <div class="org-actions">
-        <a class="button button-primary" href="${org.url}" target="_blank" rel="noreferrer">Donate on Official Website</a>
+        <a class="button button-primary" href="${org.url}" target="_blank" rel="noopener noreferrer">Visit Official Website</a>
       </div>
     </article>
   `).join('');

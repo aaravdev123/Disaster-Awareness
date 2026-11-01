@@ -1151,7 +1151,102 @@ def render_dashboard() -> None:
         page_icon="🌦️",
         layout="wide",
     )
-    st.title("Disaster Image Analyzer")
+    st.markdown(
+        """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
+        :root {
+            --dr-navy: #10243a;
+            --dr-navy-soft: #1c3551;
+            --dr-orange: #f39c35;
+            --dr-grey: #f4f6f8;
+            --dr-text: #1a2430;
+            --dr-muted: #5d6f82;
+        }
+
+        [data-testid="stAppViewContainer"] {
+            background: var(--dr-grey);
+            color: var(--dr-text);
+            font-family: "Manrope", sans-serif;
+        }
+
+        [data-testid="stHeader"] {
+            background: transparent;
+        }
+
+        [data-testid="stMainBlockContainer"] {
+            max-width: 1120px;
+            padding-top: 2rem;
+            padding-bottom: 3rem;
+        }
+
+        h1, h2, h3, p, label {
+            font-family: "Manrope", sans-serif;
+        }
+
+        h1, h2, h3 {
+            color: var(--dr-navy);
+        }
+
+        h1 {
+            font-size: clamp(2rem, 4vw, 3rem);
+            font-weight: 800;
+        }
+
+        .disasterready-kicker {
+            margin: 0 0 0.4rem;
+            color: var(--dr-orange);
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+
+        .disasterready-upload-heading {
+            margin: 1.8rem 0 0.65rem;
+        }
+
+        .disasterready-upload-heading h2 {
+            margin: 0;
+            color: var(--dr-navy);
+            font-size: 1.3rem;
+            font-weight: 800;
+        }
+
+        .disasterready-upload-heading p {
+            margin: 0.2rem 0 0;
+            color: var(--dr-muted);
+            font-size: 0.88rem;
+        }
+
+        [data-testid="stFileUploader"],
+        [data-testid="stExpander"] {
+            border-radius: 16px;
+        }
+
+        div.stButton > button[kind="primary"] {
+            border: 0;
+            border-radius: 999px;
+            background: var(--dr-orange);
+            color: #fff;
+            font-weight: 800;
+        }
+
+        div.stButton > button[kind="primary"]:hover {
+            border: 0;
+            background: #df8520;
+            color: #fff;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<p class="disasterready-kicker">DisasterReady · Image Analyzer</p>',
+        unsafe_allow_html=True,
+    )
+    st.title("    Disaster Image Analyzer")
     st.caption(
         "Classify an uploaded image and estimate its disaster-related signal. "
         "This is an educational screening aid, not an official warning."
@@ -1161,6 +1256,15 @@ def render_dashboard() -> None:
         "calibrated probability that a disaster is occurring."
     )
 
+    st.markdown(
+        """
+        <div class="disasterready-upload-heading">
+          <h2>Upload a disaster image</h2>
+          <p>JPEG or PNG · Up to 25 MB · Analysis runs locally</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     uploaded_file = st.file_uploader(
         "Disaster image",
         type=["jpg", "jpeg", "png"],

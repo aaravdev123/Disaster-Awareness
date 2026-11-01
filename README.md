@@ -6,6 +6,11 @@ classifies its broad hazard category, estimates an image-only disaster signal,
 and can add a location-aware pin to a session map. The optional FastAPI API
 remains separate from the image-only dashboard.
 
+The website's Hazard Map is a curated awareness layer, not a live event feed.
+Its World view includes 34 approximate regional areas, including records for
+the Haiti and Gorkha earthquakes, Pakistan floods, Maui wildfires, and
+Hurricane Katrina.
+
 ## Run locally
 
 Use Python 3.9 or newer. Install the packages in `requirements.txt` in a virtual
