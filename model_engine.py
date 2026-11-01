@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import base64
-import pickle
 import threading
 from io import BytesIO
-from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import cv2
@@ -23,44 +21,23 @@ TABULAR_WEIGHTS = {
     "ground_temp_c": 0.10,
 }
 
-_DISASTER_CLASSES = ("Earthquake", "Fire", "Flood")
-_NON_DAMAGE_CLASS = "Non-Damage"
+_NON_DAMAGE_CLASS = "Non_Damage"
 _MIN_CLASS_CONFIDENCE = 0.90
-_VISION_CLASS_NAMES = ["Non-Damage", "Earthquake", "Fire", "Flood"]
-_VISION_WEIGHTS_PATH = (
-    Path(__file__).resolve().parent
-    / "assets"
-    / "models"
-    / "disaster_resnet50_fp16.pth"
-)
+_VISION_MODEL_ID = "Luwayy/disaster_images_model"
+_VISION_MODEL_REVISION = "8389ac9a54f1cc7a4d0bebb991eda991484b12d9"
+_HAZARD_CATEGORIES = {
+    "Damaged_Infrastructure": "Infrastructure damage",
+    "Fire_Disaster": "Fire-related hazards",
+    "Human_Damage": "Human impact",
+    "Land_Disaster": "Land and slope hazards",
+    "Non_Damage": "No visible disaster damage",
+    "Water_Disaster": "Flooding and water-related hazards",
+}
 
 
-class ImageDomainError(ValueError):
-    """Raised when the disaster classifier cannot identify a strong disaster cue."""
-
-    def __init__(self, predictions: List[dict]) -> None:
-        self.predictions = predictions
-        labels = ", ".join(
-            f"{item['label']} ({item['probability']:.0%})" for item in predictions
-        )
-        predicted_label = predictions[0]["label"] if predictions else "unknown"
-        if predicted_label == _NON_DAMAGE_CLASS:
-            message = (
-                "The disaster-image classifier found no damage-related class "
-                f"(top class: {predicted_label}). Its predictions were: {labels}. "
-                "The photo may be an unrelated or non-damage scene. Upload a clear "
-                "image showing fire, flood, earthquake damage, or continue with "
-                "environmental measurements only."
-            )
-        else:
-            message = (
-                "The disaster-image classifier could not identify a disaster "
-                f"scene with at least {_MIN_CLASS_CONFIDENCE:.0%} class confidence. "
-                f"Its predictions were: {labels}. Try a clearer "
-                "photo of fire, flooding, or earthquake damage, or continue with "
-                "environmental measurements only."
-            )
-        super().__init__(message)
+def hazard_category_for_label(label: str) -> str:
+    """Translate a model label into a broad, user-facing hazard category."""
+    return _HAZARD_CATEGORIES.get(label, label.replace("_", " ").strip().capitalize())
 
 
 def _normalize_hazards(features: np.ndarray) -> np.ndarray:
@@ -107,7 +84,7 @@ class MultimodalRiskEngine:
         self._vision_lock = threading.Lock()
         self._inference_lock = threading.Lock()
         self._vision_model = None
-        self._vision_transform = None
+        self._vision_processor = None
         self._vision_categories: Optional[List[str]] = None
         self._torch = None
 
@@ -142,19 +119,23 @@ class MultimodalRiskEngine:
 
         assert self._torch is not None
         assert self._vision_model is not None
-        assert self._vision_transform is not None
+        assert self._vision_processor is not None
         assert self._vision_categories is not None
         image = Image.open(BytesIO(image_bytes)).convert("RGB")
-        tensor = self._vision_transform(image).unsqueeze(0).to(self._vision_device)
+        model_inputs = self._vision_processor(images=image, return_tensors="pt")
+        model_inputs = {
+            name: tensor.to(self._vision_device)
+            for name, tensor in model_inputs.items()
+        }
         activation_cache = []
-        target_layer = self._vision_model.layer4[-1]
+        target_layer = self._vision_model.vit.encoder.layer[-1]
         with self._inference_lock:
             hook = target_layer.register_forward_hook(
                 lambda _module, _inputs, output: activation_cache.append(output)
             )
             try:
                 self._vision_model.zero_grad(set_to_none=True)
-                logits = self._vision_model(tensor)[0]
+                logits = self._vision_model(**model_inputs).logits[0]
                 probabilities = self._torch.nn.functional.softmax(
                     logits.detach(), dim=0
                 )
@@ -164,18 +145,24 @@ class MultimodalRiskEngine:
                 interpretation = self._interpret_predictions(
                     top_probabilities, top_indices
                 )
-                if interpretation["out_of_domain"]:
-                    raise ImageDomainError(interpretation["top_predictions"])
-
                 target_index = interpretation.pop("target_index")
                 target_activation = activation_cache[0]
                 gradients = self._torch.autograd.grad(
                     logits[target_index], target_activation, retain_graph=False
                 )[0]
-                channel_weights = gradients.mean(dim=(2, 3), keepdim=True)
+                patch_count = target_activation.shape[1] - 1
+                grid_size = int(patch_count**0.5)
+                if grid_size * grid_size != patch_count:
+                    raise RuntimeError(
+                        "The vision model returned a non-square patch grid; "
+                        "Grad-CAM cannot be rendered."
+                    )
+                patch_activation = target_activation[:, 1:, :]
+                patch_gradients = gradients[:, 1:, :]
+                patch_weights = patch_gradients.mean(dim=1, keepdim=True)
                 cam = self._torch.relu(
-                    (channel_weights * target_activation).sum(dim=1, keepdim=True)
-                )[0, 0]
+                    (patch_weights * patch_activation).sum(dim=-1)
+                )[0].reshape(grid_size, grid_size)
                 cam = self._torch.nn.functional.interpolate(
                     cam[None, None],
                     size=(image.height, image.width),
@@ -199,22 +186,28 @@ class MultimodalRiskEngine:
             "saliency_regions": regions,
             "explanation_image_base64": base64.b64encode(overlay).decode("ascii"),
             "analysis_target": (
-                "Grad-CAM for the disaster classifier class "
+                "Vision Transformer Grad-CAM for the classifier class "
                 f"'{interpretation['target_label']}'"
             ),
             "explanation_note": (
                 "Rectangles show image regions that influenced this classifier's "
                 "label. They are not object detections, hazard boundaries, or proof "
-                "that damage or a disaster is present. The classifier was fine-tuned "
-                "on aerial imagery and may not generalize to ground-level photos."
+                "that damage or a disaster is present. The model card does not "
+                "document the training dataset or validate ground-level performance. "
+                "Grad-CAM is an attention visualization, not a verified hazard "
+                f"detection; low-confidence and {_NON_DAMAGE_CLASS} results are "
+                "diagnostic only and are excluded from risk-index fusion."
             ),
         }
 
     def _interpret_predictions(self, top_probabilities, top_indices) -> dict:
-        """Return the disaster-class probability mass and reject weak predictions."""
+        """Return the disaster-class score and mark weak predictions for exclusion."""
         predictions = [
             {
                 "label": self._vision_categories[int(index)],
+                "category": hazard_category_for_label(
+                    self._vision_categories[int(index)]
+                ),
                 "probability": round(float(probability), 4),
             }
             for probability, index in zip(top_probabilities, top_indices)
@@ -224,14 +217,16 @@ class MultimodalRiskEngine:
             self._vision_categories[int(index)]: float(probability)
             for probability, index in zip(top_probabilities, top_indices)
         }
-        hazard_signal = sum(
-            class_probabilities.get(label, 0.0)
-            for label in _DISASTER_CLASSES
-        )
+        hazard_labels = [
+            label
+            for label in self._vision_categories
+            if label != _NON_DAMAGE_CLASS
+        ]
+        hazard_signal = sum(class_probabilities.get(label, 0.0) for label in hazard_labels)
         matched_predictions = []
         for probability, index in zip(top_probabilities, top_indices):
             label = self._vision_categories[int(index)]
-            if label in _DISASTER_CLASSES:
+            if label in hazard_labels:
                 probability_value = float(probability)
                 matched_predictions.append(
                     {
@@ -247,17 +242,26 @@ class MultimodalRiskEngine:
         )
         return {
             "score": round(float(np.clip(hazard_signal, 0.0, 1.0)), 4),
+            "image_only_estimate_pct": round(
+                float(np.clip(hazard_signal, 0.0, 1.0)) * 100, 1
+            ),
+            "score_basis": (
+                "Sum of model class probabilities for all labels except "
+                f"{_NON_DAMAGE_CLASS}; not a calibrated real-world probability."
+            ),
             "model_confidence": round(confidence, 4),
+            "confidence_threshold": _MIN_CLASS_CONFIDENCE,
             "out_of_domain": out_of_domain,
             "target_label": target_label,
+            "target_category": hazard_category_for_label(target_label),
             "target_index": int(top_indices[0]),
             "matched_hazard_labels": [
-                label for label in _DISASTER_CLASSES if class_probabilities[label] > 0
+                label for label in hazard_labels if class_probabilities[label] > 0
             ],
             "matched_hazard_predictions": matched_predictions,
             "top_predictions": predictions,
             "model_name": (
-                "ResNet50 fine-tuned on a four-class natural-disaster image dataset"
+                "Luwayy/disaster_images_model (six-class Vision Transformer)"
             ),
         }
 
@@ -349,47 +353,73 @@ class MultimodalRiskEngine:
         return encoded.tobytes()
 
     def _load_vision_model(self) -> None:
-        """Load the bundled, locally stored disaster checkpoint exactly once."""
+        """Load the pinned Hugging Face checkpoint, using its local cache."""
         if self._vision_model is not None:
             return
 
         with self._vision_lock:
             if self._vision_model is not None:
                 return
-            if not _VISION_WEIGHTS_PATH.is_file():
-                raise RuntimeError(
-                    "The local disaster model weights are missing. Ensure "
-                    "assets/models/disaster_resnet50_fp16.pth is present in the "
-                    "project checkout."
-                )
             try:
+                from huggingface_hub import try_to_load_from_cache
                 import torch
-                from torchvision import models, transforms
+                from transformers import AutoImageProcessor, AutoModelForImageClassification
             except (ImportError, RuntimeError) as exc:
                 raise RuntimeError(
-                    "Vision inference requires compatible PyTorch and torchvision "
+                    "Vision inference requires compatible PyTorch and Transformers "
                     "installations. Install the project requirements and retry."
                 ) from exc
 
+            cached_model_files = (
+                "config.json",
+                "preprocessor_config.json",
+                "model.safetensors",
+            )
+            local_files_only = all(
+                isinstance(
+                    try_to_load_from_cache(
+                        _VISION_MODEL_ID,
+                        filename,
+                        revision=_VISION_MODEL_REVISION,
+                    ),
+                    str,
+                )
+                for filename in cached_model_files
+            )
             try:
-                state_dict = torch.load(
-                    _VISION_WEIGHTS_PATH,
-                    map_location="cpu",
-                    weights_only=True,
+                processor = AutoImageProcessor.from_pretrained(
+                    _VISION_MODEL_ID,
+                    revision=_VISION_MODEL_REVISION,
+                    use_fast=False,
+                    local_files_only=local_files_only,
                 )
-                if not isinstance(state_dict, dict):
-                    raise TypeError("The checkpoint is not a state dictionary.")
-                model = models.resnet50(weights=None)
-                model.fc = torch.nn.Linear(
-                    model.fc.in_features, len(_VISION_CLASS_NAMES)
+                model = AutoModelForImageClassification.from_pretrained(
+                    _VISION_MODEL_ID,
+                    revision=_VISION_MODEL_REVISION,
+                    use_safetensors=True,
+                    local_files_only=local_files_only,
                 )
-                model.load_state_dict(state_dict, strict=True)
-            except (OSError, RuntimeError, KeyError, TypeError, pickle.UnpicklingError) as exc:
+            except (OSError, RuntimeError, ValueError) as exc:
                 raise RuntimeError(
-                    "The disaster-specific ResNet50 checkpoint is invalid or "
-                    "incompatible with this PyTorch installation. Verify the "
-                    "bundled model file and install the listed requirements."
+                    f"Could not load {_VISION_MODEL_ID} at pinned revision "
+                    f"{_VISION_MODEL_REVISION}. On first use, connect to Hugging "
+                    "Face to download its weights; afterward they are read from "
+                    "the local Hugging Face cache. Verify the model cache and "
+                    "install the listed requirements."
                 ) from exc
+
+            label_map = model.config.id2label
+            categories = [
+                label_map[index]
+                if index in label_map
+                else label_map[str(index)]
+                for index in range(model.config.num_labels)
+            ]
+            if len(categories) != 6 or _NON_DAMAGE_CLASS not in categories:
+                raise RuntimeError(
+                    "The downloaded disaster classifier does not have the "
+                    "expected six classes."
+                )
 
             if torch.cuda.is_available():
                 device = torch.device("cuda")
@@ -400,14 +430,5 @@ class MultimodalRiskEngine:
             self._torch = torch
             self._vision_model = model.eval().to(device)
             self._vision_device = device
-            self._vision_transform = transforms.Compose(
-                [
-                    transforms.Resize((224, 224)),
-                    transforms.ToTensor(),
-                    transforms.Normalize(
-                        mean=[0.485, 0.456, 0.406],
-                        std=[0.229, 0.224, 0.225],
-                    ),
-                ]
-            )
-            self._vision_categories = _VISION_CLASS_NAMES
+            self._vision_processor = processor
+            self._vision_categories = categories

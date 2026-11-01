@@ -1192,6 +1192,22 @@ function initialiseHazardMap() {
     return container;
   }
 
+  function openMapPopup(content, latlng) {
+    const mapSize = map.getSize();
+    const padding = 24;
+    window.L.popup({
+      maxWidth: Math.max(180, Math.min(380, mapSize.x - padding * 2)),
+      maxHeight: Math.max(180, mapSize.y - padding * 2),
+      autoPan: true,
+      autoPanPaddingTopLeft: [padding, padding],
+      autoPanPaddingBottomRight: [padding, padding],
+      keepInView: true
+    })
+      .setLatLng(latlng)
+      .setContent(content)
+      .openOn(map);
+  }
+
   function showFeatureDetails(feature, latlng = map.getCenter()) {
     const properties = feature.properties;
     const category = categoryById.get(properties.category);
@@ -1237,10 +1253,7 @@ function initialiseHazardMap() {
       ],
       matchingEvents
     );
-    window.L.popup({ maxWidth: 380, maxHeight: 360 })
-      .setLatLng(latlng)
-      .setContent(popup)
-      .openOn(map);
+    openMapPopup(popup, latlng);
   }
 
   function showFaultDetails(feature, latlng = map.getCenter()) {
@@ -1283,10 +1296,7 @@ function initialiseHazardMap() {
       }],
       'Data reference'
     );
-    window.L.popup({ maxWidth: 380, maxHeight: 360 })
-      .setLatLng(latlng)
-      .setContent(popup)
-      .openOn(map);
+    openMapPopup(popup, latlng);
   }
 
   function updatePressedStates() {

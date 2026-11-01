@@ -9,22 +9,27 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+from html import escape
 import json
 from datetime import datetime, timezone
 from typing import Dict, Optional
 from uuid import uuid4
 
+import pydeck as pdk
 import streamlit as st
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.responses import JSONResponse
 
-from model_engine import ImageDomainError, MultimodalRiskEngine
+from model_engine import MultimodalRiskEngine
 from utils import (
     MAX_IMAGE_BYTES,
+    IPGeolocationError,
     ImageValidationError,
     WeatherLookupError,
+    extract_image_metadata,
+    fetch_ip_coordinates,
     fetch_weather,
     is_previewable_image,
     validate_image,
@@ -41,6 +46,15 @@ api = FastAPI(
 )
 _engine = MultimodalRiskEngine()
 _MAX_REQUEST_BYTES = MAX_IMAGE_BYTES + 1024 * 1024
+_MAX_SESSION_MAP_PINS = 100
+_MAP_COLORS = {
+    "Damaged_Infrastructure": [255, 159, 67, 210],
+    "Fire_Disaster": [239, 68, 68, 220],
+    "Human_Damage": [214, 64, 140, 220],
+    "Land_Disaster": [180, 130, 70, 220],
+    "Non_Damage": [120, 130, 145, 180],
+    "Water_Disaster": [52, 152, 219, 220],
+}
 
 
 @api.middleware("http")
@@ -57,7 +71,7 @@ async def limit_request_size(request, call_next):
         if request_size < 0 or request_size > _MAX_REQUEST_BYTES:
             return JSONResponse(
                 status_code=413,
-                content={"detail": "Request exceeds the 11 MB upload limit."},
+                content={"detail": "Request exceeds the 26 MB upload limit."},
             )
     return await call_next(request)
 
@@ -170,14 +184,26 @@ def _build_assessment_report(
     metric_dict = metrics.model_dump()
     tabular_score, tabular_components = _engine.score_environment(metric_dict)
     vision = _engine.score_image(image_bytes) if image_bytes is not None else None
-    if vision is not None and vision["out_of_domain"]:
-        raise ValueError(
-            "The disaster-image classifier could not identify a sufficiently "
-            "confident disaster class. Try a clearer photo of fire, flooding, or "
-            "earthquake damage, or assess without an image."
-        )
+    vision_included = vision is not None and not vision["out_of_domain"]
+    if vision is not None:
+        vision["included_in_fusion"] = vision_included
+        if not vision_included:
+            target_label = vision["target_label"]
+            target_confidence = vision["model_confidence"]
+            if target_label == "Non_Damage":
+                vision["exclusion_reason"] = (
+                    "The model classified this image as Non_Damage. Its image score "
+                    "was not used in the risk index."
+                )
+            else:
+                vision["exclusion_reason"] = (
+                    f"The top class confidence ({target_confidence:.0%}) is below "
+                    f"the {vision['confidence_threshold']:.0%} inclusion threshold. "
+                    "Its image score was not used "
+                    "in the risk index."
+                )
 
-    if vision is None:
+    if not vision_included:
         risk_score = tabular_score * 100
         fusion_weights = {"vision": 0.0, "tabular": 1.0}
     else:
@@ -206,7 +232,19 @@ def _build_assessment_report(
             if preflight
             else None
         ),
+        "image_metadata": extract_image_metadata(image_bytes)
+        if image_bytes is not None
+        else None,
         "vision": vision,
+        "image_only_disaster_estimate": (
+            {
+                "score_pct": vision["image_only_estimate_pct"],
+                "basis": vision["score_basis"],
+                "calibrated_probability": False,
+            }
+            if vision is not None
+            else None
+        ),
         "tabular": {
             "score": round(tabular_score, 4),
             "component_signals": tabular_components,
@@ -214,19 +252,314 @@ def _build_assessment_report(
         },
         "fusion": {
             "weights": fusion_weights,
+            "vision_included": vision_included,
             "risk_index_pct": risk_score,
             "alert_level": level,
         },
         "safety_checklist": _safety_checklist(level),
         "limitations": [
             "This educational screening tool is not an official forecast, warning, or evacuation instruction.",
-            "The vision model is community fine-tuned on aerial disaster imagery; its published model card does not provide numeric evaluation results.",
-            "The four-class vision score is the classifier probability mass on Earthquake, Fire, and Flood; it is not calibrated for disaster severity and may misclassify unrelated images.",
+            "The community vision model's model card does not identify its training dataset or provide numeric evaluation results.",
+            "The vision score is the classifier probability mass across five disaster-related classes; it is not calibrated for disaster severity and may misclassify unrelated images.",
+            "Images below the 90% class-confidence threshold or classified as Non_Damage are shown for diagnostic purposes but excluded from the risk-index fusion.",
             "The tabular score uses transparent heuristic thresholds and is not empirically calibrated.",
             "Weather readings are provider baselines and may differ from conditions at the site.",
             "Follow local emergency services and official weather authorities.",
         ],
     }
+
+
+def _render_image_review(
+    vision: dict,
+    image_bytes: bytes,
+    image_metadata: Optional[dict] = None,
+    included_in_fusion: Optional[bool] = None,
+) -> None:
+    """Render classifier results without presenting them as verified detections."""
+    estimate_pct = vision.get(
+        "image_only_estimate_pct", round(float(vision["score"]) * 100, 1)
+    )
+    st.subheader("Image-only disaster estimate")
+    st.metric("Model-estimated disaster signal", f"{estimate_pct:.1f}%")
+    st.progress(estimate_pct / 100.0)
+    st.caption(
+        "Calculated from the image alone as the model's combined score across "
+        "its disaster-related categories. This is a classifier score, not a "
+        "calibrated probability that a disaster is occurring."
+    )
+    original_column, analysis_column = st.columns(2)
+    with original_column:
+        st.image(
+            image_bytes,
+            caption="Original uploaded image",
+            use_container_width=True,
+        )
+    with analysis_column:
+        overlay_bytes = base64.b64decode(
+            vision["explanation_image_base64"], validate=True
+        )
+        st.image(
+            overlay_bytes,
+            caption="Grad-CAM attention heatmap and analyzed-region boxes",
+            use_container_width=True,
+        )
+    st.markdown(
+        f"**Broad image category / Grad-CAM target:** "
+        f"{vision['target_category']}"
+    )
+    st.caption(
+        f"Model class: `{vision['target_label']}`. Categories are broad "
+        "image classifications and do not confirm a specific event."
+    )
+    if image_metadata and image_metadata["latitude"] is not None:
+        captured = image_metadata["captured_at"] or "Capture time not present in EXIF"
+        st.info(
+            f"Photo EXIF location: {image_metadata['latitude']:.5f}, "
+            f"{image_metadata['longitude']:.5f}. Capture time: {captured}."
+        )
+    elif image_metadata is not None:
+        st.info(
+            "This image has no usable GPS coordinates in its EXIF metadata, "
+            "so it cannot be pinned automatically."
+        )
+    target_prediction = next(
+        (
+            prediction
+            for prediction in vision["top_predictions"]
+            if prediction["label"] == vision["target_label"]
+        ),
+        None,
+    )
+    if target_prediction:
+        st.caption(
+            "Category confidence: "
+            f"{target_prediction['probability']:.1%}. This is class "
+            "confidence, not a probability that a disaster is occurring. "
+            + (
+                "This image score was included in the 40% vision / 60% "
+                "environmental fusion."
+                if included_in_fusion
+                else (
+                    "This image score was excluded from the risk-index fusion."
+                    if included_in_fusion is False
+                    else "This is an image-only review; no environmental risk "
+                    "assessment was run."
+                )
+            )
+        )
+    st.caption(vision["explanation_note"])
+    st.markdown("**Regions that most influenced the label**")
+    if vision["saliency_regions"]:
+        region_rows = [
+            {
+                "Region": f"Region {index}",
+                "Image bounds (pixels)": (
+                    f"x={region['x']}, y={region['y']}, "
+                    f"w={region['width']}, h={region['height']}"
+                ),
+                "Mean attention": f"{region['activation_pct']:.1f}%",
+                "Image area": f"{region['area_pct']:.1f}%",
+            }
+            for index, region in enumerate(vision["saliency_regions"], start=1)
+        ]
+        st.dataframe(region_rows, hide_index=True, use_container_width=True)
+    else:
+        st.info("The model did not isolate a distinct high-attention region.")
+    with st.expander("Top image classifier predictions"):
+        st.dataframe(
+            [
+                {
+                    "Broad hazard category": item["category"],
+                    "Model class": item["label"],
+                    "Class confidence": f"{item['probability']:.1%}",
+                }
+                for item in vision["top_predictions"]
+            ],
+            hide_index=True,
+            use_container_width=True,
+        )
+
+
+def _build_image_only_review(image_bytes: bytes) -> dict:
+    """Validate and classify an image without running environmental scoring."""
+    preflight = validate_image(image_bytes)
+    return {
+        "image_sha256": hashlib.sha256(image_bytes).hexdigest(),
+        "image_metadata": extract_image_metadata(image_bytes),
+        "preflight": {
+            "width": preflight.width,
+            "height": preflight.height,
+            "format": preflight.image_format,
+            "blur_variance": preflight.blur_variance,
+        },
+        "vision": _engine.score_image(image_bytes),
+    }
+
+
+def _resolve_photo_location(
+    image_metadata: dict,
+    location_choice: str,
+    ip_lookup_consent: bool,
+    manual_coordinates_confirmed: bool,
+    manual_latitude: Optional[float],
+    manual_longitude: Optional[float],
+) -> dict:
+    """Choose EXIF, opted-in IP, or explicitly confirmed manual map coordinates."""
+    metadata = dict(image_metadata)
+    if metadata.get("latitude") is not None and metadata.get("longitude") is not None:
+        metadata["location_source"] = "exif"
+        metadata["location_accuracy"] = "Camera-provided coordinates; accuracy unknown"
+        return metadata
+
+    metadata["latitude"] = None
+    metadata["longitude"] = None
+    metadata["location_source"] = None
+    metadata["location_accuracy"] = None
+
+    if location_choice == "Approximate current network location (IP)":
+        if not ip_lookup_consent:
+            return metadata
+        coordinates = fetch_ip_coordinates()
+        metadata.update(coordinates)
+        metadata["location_source"] = "ip"
+        metadata["location_accuracy"] = "Approximate public-IP location"
+    elif (
+        location_choice == "Enter coordinates manually"
+        and manual_coordinates_confirmed
+        and manual_latitude is not None
+        and manual_longitude is not None
+        and -90 <= manual_latitude <= 90
+        and -180 <= manual_longitude <= 180
+    ):
+        metadata["latitude"] = float(manual_latitude)
+        metadata["longitude"] = float(manual_longitude)
+        metadata["location_source"] = "manual"
+        metadata["location_accuracy"] = "User-entered coordinates"
+    return metadata
+
+
+def _make_crisis_map_pin(
+    image_metadata: dict, vision: dict, image_sha256: str
+) -> Optional[dict]:
+    """Create a session map pin only when EXIF contains valid GPS coordinates."""
+    latitude = image_metadata.get("latitude")
+    longitude = image_metadata.get("longitude")
+    if latitude is None or longitude is None:
+        return None
+
+    label = vision["target_label"]
+    return {
+        "image_sha256": image_sha256,
+        "latitude": float(latitude),
+        "longitude": float(longitude),
+        "category": vision["target_category"],
+        "model_label": label,
+        "captured_at": image_metadata.get("captured_at"),
+        "capture_time_timezone_known": image_metadata.get(
+            "capture_time_timezone_known", False
+        ),
+        "location_source": image_metadata.get("location_source", "exif"),
+        "location_accuracy": image_metadata.get("location_accuracy"),
+        "image_only_estimate_pct": vision.get("image_only_estimate_pct"),
+        "color": _MAP_COLORS.get(label, [100, 116, 139, 210]),
+        "pinned_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _store_crisis_map_pin(
+    image_metadata: dict, vision: dict, image_sha256: str
+) -> bool:
+    """Keep deduplicated photo pins in this Streamlit session only."""
+    pin = _make_crisis_map_pin(image_metadata, vision, image_sha256)
+    pins = st.session_state.get("crisis_map_pins", [])
+    pins = [item for item in pins if item["image_sha256"] != image_sha256]
+    if pin is None:
+        st.session_state["crisis_map_pins"] = pins
+        return False
+    pins.append(pin)
+    st.session_state["crisis_map_pins"] = pins[-_MAX_SESSION_MAP_PINS:]
+    return True
+
+
+def _render_crisis_map() -> None:
+    """Render EXIF-located image classifications on an interactive session map."""
+    st.subheader("Interactive global crisis map")
+    st.caption(
+        "Photo pins stay in this browser session; images and EXIF metadata are "
+        "not saved to a shared database. The map uses public CARTO basemap tiles."
+    )
+    pins = st.session_state.get("crisis_map_pins", [])
+    if not pins:
+        st.info(
+            "Review or assess an image with EXIF GPS or user-confirmed coordinates "
+            "to add its category to this map."
+        )
+        return
+
+    locations = [
+        {
+            **pin,
+            "tooltip_time": escape(pin["captured_at"] or "Not present in EXIF"),
+            "tooltip_category": escape(pin["category"]),
+            "tooltip_accuracy": escape(pin.get("location_accuracy") or "Unknown location source"),
+        }
+        for pin in pins
+    ]
+    latest = locations[-1]
+    view_state = pdk.ViewState(
+        latitude=latest["latitude"],
+        longitude=latest["longitude"],
+        zoom=4 if len(locations) == 1 else 2,
+        pitch=0,
+    )
+    layer = pdk.Layer(
+        "ScatterplotLayer",
+        data=locations,
+        get_position="[longitude, latitude]",
+        get_fill_color="color",
+        get_radius=12000,
+        radius_min_pixels=7,
+        radius_max_pixels=24,
+        pickable=True,
+        auto_highlight=True,
+    )
+    deck = pdk.Deck(
+        layers=[layer],
+        initial_view_state=view_state,
+        map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+        tooltip={
+            "html": (
+                "<b>{tooltip_category}</b><br/>"
+                "Captured: {tooltip_time}<br/>"
+                "Location: {tooltip_accuracy}<br/>"
+                "Lat/Lon: {latitude}, {longitude}"
+            ),
+            "style": {"color": "#fff"},
+        },
+    )
+    st.pydeck_chart(deck, use_container_width=True, height=480)
+    st.dataframe(
+        [
+            {
+                "Category": pin["category"],
+                "Captured (EXIF)": pin["captured_at"] or "Unavailable",
+                "Latitude": round(pin["latitude"], 5),
+                "Longitude": round(pin["longitude"], 5),
+                "Location source": pin.get("location_accuracy") or "EXIF",
+            }
+            for pin in pins
+        ],
+        hide_index=True,
+        use_container_width=True,
+    )
+
+
+def _start_image_only_review() -> None:
+    """Keep the image-only action separate from any prior site assessment."""
+    st.session_state["image_only_review_mode"] = True
+    st.session_state.pop("assessment_report", None)
+    st.session_state.pop("assessment_input_signature", None)
+    st.session_state.pop("image_review", None)
 
 
 @api.get("/health")
@@ -324,7 +657,7 @@ async def assess(
             image_bytes = await image.read(MAX_IMAGE_BYTES + 1)
             if len(image_bytes) > MAX_IMAGE_BYTES:
                 raise HTTPException(
-                    status_code=413, detail="Image exceeds the 10 MB upload limit."
+                    status_code=413, detail="Image exceeds the 25 MB upload limit."
                 )
             preflight = validate_image(image_bytes)
         except ImageValidationError as exc:
@@ -349,8 +682,8 @@ async def assess(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-def render_dashboard() -> None:
-    """Render a fully local Streamlit interface and run inference in-process."""
+def _render_environmental_assessment_dashboard() -> None:
+    """Retained legacy dashboard; the public Streamlit entry point is image-only."""
     st.set_page_config(page_title="Disaster Risk Assessment", page_icon="🌦️", layout="wide")
     st.title("Multimodal Disaster Risk Assessment")
     st.caption(
@@ -461,22 +794,23 @@ def render_dashboard() -> None:
         "wind_speed_kmh": wind,
         "ground_temp_c": ground_temperature,
     }
-    preview_score, _ = _engine.score_environment(preview_metrics)
-    preview_percent = round(preview_score * 100, 1)
-    st.metric("Live environmental screening estimate", f"{preview_percent:.1f}%")
-    st.progress(preview_percent / 100.0)
-    st.caption(
-        "Draft tabular-only score from the displayed measurements. If live weather "
-        "is enabled, fresh rainfall and wind values are applied when you submit."
-    )
+    if not st.session_state.get("image_only_review_mode", False):
+        preview_score, _ = _engine.score_environment(preview_metrics)
+        preview_percent = round(preview_score * 100, 1)
+        st.metric("Live environmental screening estimate", f"{preview_percent:.1f}%")
+        st.progress(preview_percent / 100.0)
+        st.caption(
+            "Draft tabular-only score from the displayed measurements. If live weather "
+            "is enabled, fresh rainfall and wind values are applied when you submit."
+        )
 
     uploaded_file = st.file_uploader(
         "Environmental image (optional)",
         type=["jpg", "jpeg", "png"],
-        help="JPEG or PNG only; maximum 10 MB. The app checks it before inference.",
+        help="JPEG or PNG only; maximum 25 MB. The app checks it before inference.",
     )
     if uploaded_file is not None and uploaded_file.size > MAX_IMAGE_BYTES:
-        st.error("Image exceeds the 10 MB upload limit.")
+        st.error("Image exceeds the 25 MB upload limit.")
         image_bytes = None
     else:
         image_bytes = uploaded_file.getvalue() if uploaded_file is not None else None
@@ -491,6 +825,68 @@ def render_dashboard() -> None:
             st.warning(
                 "The uploaded file could not be safely previewed. Image validation "
                 "will reject it before assessment."
+            )
+
+    pin_location_choice = "Don't pin"
+    ip_lookup_consent = False
+    manual_coordinates_confirmed = False
+    manual_latitude = None
+    manual_longitude = None
+    uploaded_image_metadata = (
+        extract_image_metadata(image_bytes) if image_bytes is not None else None
+    )
+    if uploaded_image_metadata and uploaded_image_metadata["latitude"] is None:
+        image_key = hashlib.sha256(image_bytes).hexdigest()[:12]
+        st.markdown("**Photo location for the map**")
+        pin_location_choice = st.radio(
+            "Where was this photo taken?",
+            (
+                "Don't pin",
+                "Approximate current network location (IP)",
+                "Enter coordinates manually",
+            ),
+            key=f"photo_location_choice_{image_key}",
+            help=(
+                "If the photo has no GPS metadata, choose an approximate location "
+                "or enter coordinates for where the photo was taken."
+            ),
+        )
+        if pin_location_choice == "Approximate current network location (IP)":
+            st.warning(
+                "IP-based location is approximate and may identify your network "
+                "rather than the photo's exact location. If you continue, this app "
+                "will send your public IP to ipapi.co, and to ipwho.is only if "
+                "ipapi.co cannot provide coordinates."
+            )
+            ip_lookup_consent = st.checkbox(
+                "I agree to look up an approximate location using this network's IP.",
+                value=False,
+                key=f"photo_ip_consent_{image_key}",
+            )
+        elif pin_location_choice == "Enter coordinates manually":
+            coordinate_columns = st.columns(2)
+            manual_latitude = coordinate_columns[0].number_input(
+                "Photo latitude",
+                min_value=-90.0,
+                max_value=90.0,
+                value=0.0,
+                step=0.0001,
+                format="%.5f",
+                key=f"photo_manual_lat_{image_key}",
+            )
+            manual_longitude = coordinate_columns[1].number_input(
+                "Photo longitude",
+                min_value=-180.0,
+                max_value=180.0,
+                value=0.0,
+                step=0.0001,
+                format="%.5f",
+                key=f"photo_manual_lon_{image_key}",
+            )
+            manual_coordinates_confirmed = st.checkbox(
+                "These coordinates are where this photo was taken.",
+                value=False,
+                key=f"photo_manual_confirm_{image_key}",
             )
 
     dashboard_metrics = {
@@ -509,11 +905,69 @@ def render_dashboard() -> None:
         use_live_weather,
     )
 
-    if st.button("Assess disaster risk", type="primary"):
+    image_review_column, assessment_column = st.columns(2)
+    with image_review_column:
+        review_image_clicked = st.button(
+            "Review image only",
+            disabled=image_bytes is None,
+            help="Analyze the uploaded image without calculating an environmental risk index.",
+            on_click=_start_image_only_review,
+        )
+    with assessment_column:
+        assess_risk_clicked = st.button("Assess disaster risk", type="primary")
+
+    if review_image_clicked:
+        if image_bytes is None:
+            st.error("Upload a valid image before starting an image-only review.")
+            return
+        try:
+            image_review = _build_image_only_review(image_bytes)
+            image_review["image_metadata"] = _resolve_photo_location(
+                image_review["image_metadata"],
+                pin_location_choice,
+                ip_lookup_consent,
+                manual_coordinates_confirmed,
+                manual_latitude,
+                manual_longitude,
+            )
+            image_review["map_pin_added"] = _store_crisis_map_pin(
+                image_review["image_metadata"],
+                image_review["vision"],
+                image_review["image_sha256"],
+            )
+            st.session_state["image_review"] = image_review
+            if not image_review["map_pin_added"]:
+                st.info(
+                    "No map pin was added. Choose a location option and confirm "
+                    "it, or continue without pinning."
+                )
+        except ImageValidationError as exc:
+            st.error(str(exc))
+            return
+        except IPGeolocationError as exc:
+            st.warning(f"Image review completed without a map pin: {exc}")
+            if "image_review" in locals():
+                image_review["image_metadata"]["latitude"] = None
+                image_review["image_metadata"]["longitude"] = None
+                image_review["image_metadata"]["location_source"] = None
+                image_review["map_pin_added"] = False
+                _store_crisis_map_pin(
+                    image_review["image_metadata"],
+                    image_review["vision"],
+                    image_review["image_sha256"],
+                )
+                st.session_state["image_review"] = image_review
+        except (ValueError, RuntimeError) as exc:
+            st.error(f"Image review could not run: {exc}")
+            return
+
+    if assess_risk_clicked:
+        st.session_state["image_only_review_mode"] = False
         st.session_state.pop("assessment_report", None)
         st.session_state.pop("assessment_input_signature", None)
+        st.session_state.pop("image_review", None)
         if uploaded_file is not None and uploaded_file.size > MAX_IMAGE_BYTES:
-            st.error("Choose an image smaller than 10 MB.")
+            st.error("Choose an image smaller than 25 MB.")
             return
         preflight = None
         if image_bytes:
@@ -559,18 +1013,34 @@ def render_dashboard() -> None:
                 image_bytes=image_bytes,
                 preflight=preflight,
             )
+            if image_bytes and st.session_state["assessment_report"]["vision"]:
+                report = st.session_state["assessment_report"]
+                try:
+                    report["image_metadata"] = _resolve_photo_location(
+                        report["image_metadata"],
+                        pin_location_choice,
+                        ip_lookup_consent,
+                        manual_coordinates_confirmed,
+                        manual_latitude,
+                        manual_longitude,
+                    )
+                except IPGeolocationError as exc:
+                    st.warning(
+                        f"Assessment completed without an IP-based map pin: {exc}"
+                    )
+                pin_added = _store_crisis_map_pin(
+                    report["image_metadata"],
+                    report["vision"],
+                    hashlib.sha256(image_bytes).hexdigest(),
+                )
+                if not pin_added:
+                    st.info(
+                        "No map pin was added. Choose a location option and "
+                        "confirm it, or continue without pinning."
+                    )
             st.session_state["assessment_input_signature"] = input_signature
         except WeatherLookupError as exc:
             st.error(f"Could not fetch live weather: {exc}")
-            return
-        except ImageDomainError as exc:
-            st.error(str(exc))
-            st.write("Top image-classifier predictions:")
-            st.dataframe(exc.predictions, hide_index=True, use_container_width=True)
-            st.info(
-                "The image was not scored or included in a risk assessment. "
-                "You can still assess the site using its environmental measurements."
-            )
             return
         except ValidationError as exc:
             st.error(f"Invalid site measurements: {exc}")
@@ -581,6 +1051,26 @@ def render_dashboard() -> None:
         except RuntimeError as exc:
             st.error(f"Image inference could not run: {exc}")
             return
+
+    image_review = st.session_state.get("image_review")
+    if (
+        image_review
+        and image_bytes is not None
+        and image_review["image_sha256"] == hashlib.sha256(image_bytes).hexdigest()
+    ):
+        st.subheader("Image-only review")
+        preflight = image_review["preflight"]
+        st.caption(
+            f"Image preflight passed: {preflight['width']} × {preflight['height']} "
+            f"{preflight['format']}; blur variance "
+            f"{preflight['blur_variance']:.1f}. No environmental risk index "
+            "was calculated."
+        )
+        _render_image_review(
+            image_review["vision"],
+            image_bytes,
+            image_metadata=image_review["image_metadata"],
+        )
 
     report = (
         st.session_state.get("assessment_report")
@@ -607,75 +1097,27 @@ def render_dashboard() -> None:
         st.progress(fusion["risk_index_pct"] / 100.0)
         if report["vision"] is not None:
             vision = report["vision"]
-            st.write(
-                f"Vision proxy: {vision['score']:.0%} · "
-                f"Environmental score: {report['tabular']['score']:.0%}"
-            )
-            original_column, analysis_column = st.columns(2)
-            with original_column:
-                st.image(
-                    image_bytes,
-                    caption="Original uploaded image",
-                    use_container_width=True,
+            if vision["included_in_fusion"]:
+                st.write(
+                    f"Vision model score: {vision['score']:.0%} · "
+                    f"Environmental score: {report['tabular']['score']:.0%}"
                 )
-            with analysis_column:
-                overlay_bytes = base64.b64decode(
-                    vision["explanation_image_base64"], validate=True
-                )
-                st.image(
-                    overlay_bytes,
-                    caption="Grad-CAM attention heatmap and analyzed-region boxes",
-                    use_container_width=True,
-                )
-            st.markdown(f"**Analyzed classifier label:** `{vision['target_label']}`")
-            target_prediction = next(
-                (
-                    prediction
-                    for prediction in vision["matched_hazard_predictions"]
-                    if prediction["label"] == vision["target_label"]
-                ),
-                None,
-            )
-            if target_prediction:
-                st.caption(
-                    f"Disaster class confidence: "
-                    f"{target_prediction['probability']:.1%}. This is class "
-                    "confidence, not a probability that a disaster is occurring."
-                )
-            st.caption(vision["explanation_note"])
-            st.markdown("**Regions that most influenced the label**")
-            if vision["saliency_regions"]:
-                region_rows = [
-                    {
-                        "Region": f"Region {index}",
-                        "Image bounds (pixels)": (
-                            f"x={region['x']}, y={region['y']}, "
-                            f"w={region['width']}, h={region['height']}"
-                        ),
-                        "Mean attention": f"{region['activation_pct']:.1f}%",
-                        "Image area": f"{region['area_pct']:.1f}%",
-                    }
-                    for index, region in enumerate(
-                        vision["saliency_regions"], start=1
-                    )
-                ]
-                st.dataframe(region_rows, hide_index=True, use_container_width=True)
             else:
-                st.info(
-                    "The model did not isolate a distinct high-attention region."
+                st.warning(
+                    vision["exclusion_reason"]
+                    + " The assessment completed using environmental "
+                    "measurements only."
                 )
-            with st.expander("Top image classifier predictions"):
-                st.dataframe(
-                    [
-                        {
-                            "Disaster class": item["label"],
-                            "Class confidence": f"{item['probability']:.1%}",
-                        }
-                        for item in vision["top_predictions"]
-                    ],
-                    hide_index=True,
-                    use_container_width=True,
+                st.caption(
+                    f"Environmental score used for this assessment: "
+                    f"{report['tabular']['score']:.0%}"
                 )
+            _render_image_review(
+                vision,
+                image_bytes,
+                image_metadata=report["image_metadata"],
+                included_in_fusion=vision["included_in_fusion"],
+            )
         else:
             st.write(
                 f"Environmental score: {report['tabular']['score']:.0%} "
@@ -698,6 +1140,172 @@ def render_dashboard() -> None:
             file_name=f"disaster-risk-{report['assessment_id']}.json",
             mime="application/json",
         )
+
+    _render_crisis_map()
+
+
+def render_dashboard() -> None:
+    """Render the image-only disaster analyzer and session crisis map."""
+    st.set_page_config(
+        page_title="Disaster Image Analyzer",
+        page_icon="🌦️",
+        layout="wide",
+    )
+    st.title("Disaster Image Analyzer")
+    st.caption(
+        "Classify an uploaded image and estimate its disaster-related signal. "
+        "This is an educational screening aid, not an official warning."
+    )
+    st.info(
+        "The image score is based only on the classifier output. It is not a "
+        "calibrated probability that a disaster is occurring."
+    )
+
+    uploaded_file = st.file_uploader(
+        "Disaster image",
+        type=["jpg", "jpeg", "png"],
+        help="JPEG or PNG only; maximum 25 MB.",
+    )
+    image_bytes = None
+    if uploaded_file is not None:
+        if uploaded_file.size > MAX_IMAGE_BYTES:
+            st.error("Image exceeds the 25 MB upload limit.")
+        else:
+            image_bytes = uploaded_file.getvalue()
+            if is_previewable_image(image_bytes):
+                st.image(
+                    image_bytes,
+                    caption="Uploaded image",
+                    use_container_width=True,
+                )
+            else:
+                st.warning(
+                    "This file cannot be previewed safely. The analyzer will "
+                    "validate it before inference."
+                )
+
+    pin_location_choice = "Don't pin"
+    ip_lookup_consent = False
+    manual_coordinates_confirmed = False
+    manual_latitude = None
+    manual_longitude = None
+    uploaded_image_metadata = (
+        extract_image_metadata(image_bytes) if image_bytes is not None else None
+    )
+    if uploaded_image_metadata and uploaded_image_metadata["latitude"] is None:
+        image_key = hashlib.sha256(image_bytes).hexdigest()[:12]
+        st.markdown("**Photo location for the map (optional)**")
+        pin_location_choice = st.radio(
+            "Where was this photo taken?",
+            (
+                "Don't pin",
+                "Approximate current network location (IP)",
+                "Enter coordinates manually",
+            ),
+            key=f"photo_location_choice_{image_key}",
+        )
+        if pin_location_choice == "Approximate current network location (IP)":
+            st.warning(
+                "IP location is approximate and may identify your network, not "
+                "the photo's location. Continuing sends your public IP to ipapi.co, "
+                "and to ipwho.is only if ipapi.co cannot provide coordinates."
+            )
+            ip_lookup_consent = st.checkbox(
+                "I agree to look up an approximate location using this network's IP.",
+                key=f"photo_ip_consent_{image_key}",
+            )
+        elif pin_location_choice == "Enter coordinates manually":
+            coordinate_columns = st.columns(2)
+            manual_latitude = coordinate_columns[0].number_input(
+                "Photo latitude",
+                min_value=-90.0,
+                max_value=90.0,
+                value=0.0,
+                step=0.0001,
+                format="%.5f",
+                key=f"photo_manual_lat_{image_key}",
+            )
+            manual_longitude = coordinate_columns[1].number_input(
+                "Photo longitude",
+                min_value=-180.0,
+                max_value=180.0,
+                value=0.0,
+                step=0.0001,
+                format="%.5f",
+                key=f"photo_manual_lon_{image_key}",
+            )
+            manual_coordinates_confirmed = st.checkbox(
+                "These coordinates are where this photo was taken.",
+                key=f"photo_manual_confirm_{image_key}",
+            )
+
+    analyze_clicked = st.button(
+        "Analyze image",
+        type="primary",
+        disabled=image_bytes is None,
+    )
+    if analyze_clicked and image_bytes is not None:
+        try:
+            image_review = _build_image_only_review(image_bytes)
+            try:
+                image_review["image_metadata"] = _resolve_photo_location(
+                    image_review["image_metadata"],
+                    pin_location_choice,
+                    ip_lookup_consent,
+                    manual_coordinates_confirmed,
+                    manual_latitude,
+                    manual_longitude,
+                )
+            except IPGeolocationError as exc:
+                st.warning(f"Analysis completed without an IP-based pin: {exc}")
+                image_review["image_metadata"] = _resolve_photo_location(
+                    image_review["image_metadata"],
+                    "Don't pin",
+                    False,
+                    False,
+                    None,
+                    None,
+                )
+
+            image_review["map_pin_added"] = _store_crisis_map_pin(
+                image_review["image_metadata"],
+                image_review["vision"],
+                image_review["image_sha256"],
+            )
+            st.session_state["image_review"] = image_review
+            if not image_review["map_pin_added"]:
+                st.info(
+                    "No map pin was added. A location was not available or confirmed."
+                )
+        except ImageValidationError as exc:
+            st.session_state.pop("image_review", None)
+            st.error(str(exc))
+        except (ValueError, RuntimeError) as exc:
+            st.session_state.pop("image_review", None)
+            st.error(f"Image analysis could not run: {exc}")
+
+    image_review = st.session_state.get("image_review")
+    current_image_hash = (
+        hashlib.sha256(image_bytes).hexdigest() if image_bytes is not None else None
+    )
+    if (
+        image_review
+        and image_review["image_sha256"] == current_image_hash
+        and image_bytes is not None
+    ):
+        preflight = image_review["preflight"]
+        st.caption(
+            f"Preflight passed: {preflight['width']} × {preflight['height']} "
+            f"{preflight['format']}; blur variance "
+            f"{preflight['blur_variance']:.1f}."
+        )
+        _render_image_review(
+            image_review["vision"],
+            image_bytes,
+            image_metadata=image_review["image_metadata"],
+        )
+
+    _render_crisis_map()
 
 
 if __name__ == "__main__":

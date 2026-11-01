@@ -64,6 +64,7 @@ select {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: clamp(0.55rem, 1vw, 1rem);
   min-height: 78px;
 }
 
@@ -71,6 +72,7 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 0.75rem;
+  flex: 0 0 auto;
   font-weight: 800;
   color: var(--navy);
 }
@@ -102,14 +104,18 @@ select {
 
 .main-nav {
   display: flex;
-  gap: 1.5rem;
+  flex: 1 1 auto;
+  justify-content: center;
+  gap: clamp(0.45rem, 0.9vw, 0.85rem);
+  min-width: 0;
   align-items: center;
-  font-size: 0.96rem;
+  font-size: clamp(0.72rem, 0.8vw, 0.9rem);
   color: var(--navy);
 }
 
 .main-nav a {
   position: relative;
+  white-space: nowrap;
   font-weight: 600;
 }
 
@@ -152,6 +158,14 @@ select {
   background: var(--orange);
   color: var(--white);
   box-shadow: 0 12px 24px rgba(243, 156, 53, 0.28);
+}
+
+.nav-cta {
+  flex: 0 0 auto;
+  padding: 0.62rem 0.9rem;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .button-secondary {
@@ -541,9 +555,10 @@ select {
 }
 
 .hazard-map-popup {
-  max-width: 340px;
+  max-width: min(340px, calc(100vw - 72px));
   color: var(--navy);
   font-family: "Manrope", sans-serif;
+  overflow-wrap: anywhere;
 }
 
 .hazard-map-popup h3 {
@@ -1591,7 +1606,7 @@ select {
   padding-left: 1.2rem;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1120px) {
   .main-nav {
     display: none;
   }

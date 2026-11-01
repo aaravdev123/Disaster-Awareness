@@ -1,28 +1,27 @@
 {
-  "model_name": "Disaster image classifier (ResNet50)",
-  "source_repository": "https://huggingface.co/DanielCruz09/disaster-image-classifier",
-  "source_revision": "e6bc347063dbda50135e76cf2d2e47a03ab16425",
-  "source_checkpoint": "models/model_weights.pth",
-  "bundled_checkpoint": "assets/models/disaster_resnet50_fp16.pth",
-  "bundled_checkpoint_format": "PyTorch state dictionary; floating point weights converted from FP32 to FP16 for storage; non-floating tensors retain their original dtype",
-  "bundled_checkpoint_sha256": "37a27b0e9db14dda147ee54adcb8ddf0077e8e2eb3673c8a45d079f048b938db",
+  "model_name": "Disaster image classifier (Vision Transformer)",
+  "source_repository": "https://huggingface.co/Luwayy/disaster_images_model",
+  "source_revision": "8389ac9a54f1cc7a4d0bebb991eda991484b12d9",
+  "source_checkpoint": "model.safetensors",
+  "source_checkpoint_size_bytes": 343236280,
+  "source_checkpoint_sha256": "9d364663c0cbede5a2d2114507aa1f613b1cb0aff1b9c35c4e21c707ab58bd17",
+  "bundled_checkpoint": null,
+  "local_cache": "Hugging Face Hub cache; downloaded on first inference",
   "classes_by_index": [
-    "Non-Damage",
-    "Earthquake",
-    "Fire",
-    "Flood"
+    "Damaged_Infrastructure",
+    "Fire_Disaster",
+    "Human_Damage",
+    "Land_Disaster",
+    "Non_Damage",
+    "Water_Disaster"
   ],
-  "training_dataset": {
-    "name": "Natural Disaster Image Dataset (AIDERv2-based)",
-    "source": "https://huggingface.co/datasets/DanielCruz09/natural_disasters",
-    "license_declared_by_dataset_card": "CC-BY-4.0"
-  },
-  "model_license_declared_by_model_card": "BSD-3-Clause",
+  "training_dataset": null,
+  "model_license_declared_by_model_card": null,
   "training_performed_in_this_project": false,
   "notes": [
-    "This is the publisher's trained checkpoint, packaged locally for offline inference.",
-    "The source model card does not publish numeric evaluation results.",
-    "The dataset consists of aerial imagery; ground-level generalization is not established.",
-    "Review source model and dataset terms before redistribution or commercial use."
+    "The source model card describes three training epochs but does not identify a training dataset or publish numeric evaluation results.",
+    "The model card does not declare a license; weights are downloaded locally at first inference and are not bundled or redistributed by this repository.",
+    "Inference runs locally after the checkpoint has been cached.",
+    "Review source model and dataset terms before use or redistribution."
   ]
 }

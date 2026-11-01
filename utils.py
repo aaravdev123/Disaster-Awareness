@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, time, timezone
 from io import BytesIO
 import math
 from typing import Optional
@@ -11,10 +11,10 @@ from typing import Optional
 import cv2
 import httpx
 import numpy as np
-from PIL import Image, UnidentifiedImageError
+from PIL import ExifTags, Image, UnidentifiedImageError
 
 
-MAX_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_IMAGE_BYTES = 25 * 1024 * 1024
 MAX_IMAGE_PIXELS = 40_000_000
 MIN_BLUR_VARIANCE = 40.0
 SUPPORTED_IMAGE_FORMATS = {"JPEG", "PNG"}
@@ -26,6 +26,10 @@ class ImageValidationError(ValueError):
 
 class WeatherLookupError(RuntimeError):
     """Raised when a location or weather provider request cannot be completed."""
+
+
+class IPGeolocationError(RuntimeError):
+    """Raised when an opted-in IP-based location lookup cannot be completed."""
 
 
 @dataclass(frozen=True)
@@ -43,7 +47,7 @@ def validate_image(image_bytes: bytes) -> ImagePreflight:
     if not image_bytes:
         raise ImageValidationError("The uploaded image is empty.")
     if len(image_bytes) > MAX_IMAGE_BYTES:
-        raise ImageValidationError("Image exceeds the 10 MB upload limit.")
+        raise ImageValidationError("Image exceeds the 25 MB upload limit.")
 
     try:
         with Image.open(BytesIO(image_bytes)) as image:
@@ -103,6 +107,162 @@ def is_previewable_image(image_bytes: bytes) -> bool:
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
         return False
     return True
+
+
+def _exif_rational_to_float(component) -> float:
+    """Convert a Pillow EXIF rational value to a float."""
+    if isinstance(component, (tuple, list)) and len(component) == 2:
+        numerator, denominator = component
+        if float(denominator) == 0:
+            raise ValueError("Invalid EXIF rational value.")
+        return float(numerator) / float(denominator)
+    return float(component)
+
+
+def _exif_dms_to_decimal(value) -> float:
+    """Convert an EXIF degrees/minutes/seconds tuple into decimal degrees."""
+    degrees, minutes, seconds = (
+        _exif_rational_to_float(component) for component in value
+    )
+    if not (
+        0 <= degrees <= 180
+        and 0 <= minutes < 60
+        and 0 <= seconds < 60
+    ):
+        raise ValueError("Invalid EXIF coordinate components.")
+    return degrees + minutes / 60 + seconds / 3600
+
+
+def extract_image_metadata(image_bytes: bytes) -> dict:
+    """Read capture time and GPS from EXIF without failing image review."""
+    metadata = {
+        "latitude": None,
+        "longitude": None,
+        "captured_at": None,
+        "capture_time_timezone_known": False,
+    }
+    try:
+        with Image.open(BytesIO(image_bytes)) as image:
+            exif = image.getexif()
+            gps_ifd = exif.get_ifd(ExifTags.IFD.GPSInfo)
+
+            def gps_value(tag: int):
+                return gps_ifd.get(tag, gps_ifd.get(ExifTags.GPSTAGS.get(tag)))
+
+            def exif_value(tag: int):
+                return exif.get(tag, exif.get(ExifTags.TAGS.get(tag)))
+
+            latitude_ref = gps_value(1)
+            longitude_ref = gps_value(3)
+            latitude_value = gps_value(2)
+            longitude_value = gps_value(4)
+
+            if (
+                latitude_ref in {"N", "S"}
+                and longitude_ref in {"E", "W"}
+                and latitude_value is not None
+                and longitude_value is not None
+            ):
+                latitude = _exif_dms_to_decimal(latitude_value)
+                longitude = _exif_dms_to_decimal(longitude_value)
+                if latitude <= 90 and longitude <= 180:
+                    metadata["latitude"] = -latitude if latitude_ref == "S" else latitude
+                    metadata["longitude"] = (
+                        -longitude if longitude_ref == "W" else longitude
+                    )
+
+            capture_time = exif_value(36867) or exif_value(36868) or exif_value(306)
+            if capture_time:
+                capture_time = (
+                    capture_time.decode("ascii", errors="ignore")
+                    if isinstance(capture_time, bytes)
+                    else str(capture_time)
+                ).strip()
+                parsed_time = datetime.strptime(
+                    capture_time, "%Y:%m:%d %H:%M:%S"
+                )
+                offset = exif_value(36881)
+                if offset:
+                    offset = (
+                        offset.decode("ascii", errors="ignore")
+                        if isinstance(offset, bytes)
+                        else str(offset)
+                    ).strip()
+                    parsed_time = datetime.strptime(
+                        capture_time + offset, "%Y:%m:%d %H:%M:%S%z"
+                    )
+                    metadata["capture_time_timezone_known"] = True
+                metadata["captured_at"] = parsed_time.isoformat()
+            else:
+                gps_date = gps_value(29)
+                gps_time = gps_value(7)
+                if gps_date and gps_time is not None:
+                    gps_date = (
+                        gps_date.decode("ascii", errors="ignore")
+                        if isinstance(gps_date, bytes)
+                        else str(gps_date)
+                    ).strip()
+                    capture_date = datetime.strptime(
+                        gps_date, "%Y:%m:%d"
+                    ).date()
+                    hour, minute, second = (
+                        _exif_rational_to_float(component)
+                        for component in gps_time
+                    )
+                    parsed_time = datetime.combine(
+                        capture_date,
+                        time(int(hour), int(minute), int(second)),
+                        tzinfo=timezone.utc,
+                    )
+                    metadata["captured_at"] = parsed_time.isoformat()
+                    metadata["capture_time_timezone_known"] = True
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        TypeError,
+        ValueError,
+        ZeroDivisionError,
+    ):
+        return metadata
+    return metadata
+
+
+def fetch_ip_coordinates() -> dict:
+    """Return approximate public-IP coordinates after the user opts in."""
+    providers = (
+        ("ipapi.co", "https://ipapi.co/json/"),
+        ("ipwho.is", "https://ipwho.is/"),
+    )
+    failures = []
+    for provider, url in providers:
+        try:
+            response = httpx.get(url, timeout=5.0, follow_redirects=True)
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise ValueError("invalid provider response")
+            if provider == "ipwho.is" and payload.get("success") is not True:
+                raise ValueError("provider reported no result")
+            latitude = float(payload["latitude"])
+            longitude = float(payload["longitude"])
+            if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+                raise ValueError("coordinates outside valid bounds")
+            return {"latitude": latitude, "longitude": longitude}
+        except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+            reason = (
+                f"HTTP {exc.response.status_code}"
+                if isinstance(exc, httpx.HTTPStatusError)
+                else type(exc).__name__
+            )
+            failures.append(f"{provider}: {reason}")
+
+    failure_details = "; ".join(failures)
+    raise IPGeolocationError(
+        "Could not determine an approximate location from the network IP "
+        f"({failure_details}). Try entering coordinates manually or continue "
+        "without a map pin."
+    )
 
 
 async def fetch_weather(

@@ -742,6 +742,96 @@ const hazardRegionData = {
         type: 'Polygon',
         coordinates: [[[-92.0, 15.5], [-90.0, 14.0], [-88.0, 13.0], [-86.0, 12.5], [-84.0, 10.5], [-82.5, 8.0], [-84.0, 7.5], [-86.0, 9.5], [-88.5, 11.0], [-90.5, 13.0], [-92.0, 15.5]]]
       }
+    },
+    {
+      type: 'Feature',
+      properties: {
+        id: 'haiti-2010-earthquake',
+        name: 'Haiti earthquake impact region',
+        category: 'earthquake',
+        scope: 'world',
+        scale: 'regional',
+        summary: 'Approximate region around the 2010 Haiti earthquake near Port-au-Prince; this polygon is not an official shaking-intensity boundary.',
+        events: [
+          { name: 'Haiti earthquake', date: '2010-01-12', severity: 'Severe', active: false, description: 'A destructive magnitude 7.0 earthquake struck near Port-au-Prince, causing widespread damage and loss of life.', sourceLabel: 'USGS event summary', sourceUrl: 'https://earthquake.usgs.gov/earthquakes/eventpage/usp000h60h/executive' }
+        ]
+      },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[[-74.8, 17.4], [-71.3, 17.4], [-71.3, 20.0], [-74.8, 20.0], [-74.8, 17.4]]]
+      }
+    },
+    {
+      type: 'Feature',
+      properties: {
+        id: 'nepal-2015-earthquake',
+        name: 'Gorkha earthquake impact region',
+        category: 'earthquake',
+        scope: 'world',
+        scale: 'regional',
+        summary: 'Approximate region affected by the 2015 Gorkha earthquake in central Nepal; not an official shaking-intensity boundary.',
+        events: [
+          { name: 'Gorkha earthquake', date: '2015-04-25', severity: 'Severe', active: false, description: 'The magnitude 7.8 earthquake caused severe damage across central Nepal and triggered landslides in the Himalaya.', sourceLabel: 'USGS event summary', sourceUrl: 'https://earthquake.usgs.gov/earthquakes/eventpage/us20002926/executive' }
+        ]
+      },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[[83.2, 26.3], [87.7, 26.3], [88.1, 29.5], [84.0, 30.0], [83.2, 26.3]]]
+      }
+    },
+    {
+      type: 'Feature',
+      properties: {
+        id: 'pakistan-2022-floods',
+        name: 'Pakistan 2022 flood-affected region',
+        category: 'flood',
+        scope: 'world',
+        scale: 'regional',
+        summary: 'Generalized region across Pakistan affected by the 2022 monsoon floods; the outline is not an inundation footprint.',
+        events: [
+          { name: 'Pakistan monsoon floods', date: '2022-06-14', severity: 'Severe', active: false, description: 'Exceptional monsoon rainfall and flooding affected millions of people and caused extensive damage to homes, crops, and infrastructure.', sourceLabel: 'World Bank assessment', sourceUrl: 'https://www.worldbank.org/en/news/press-release/2022/10/28/pakistan-floods-cost-over-usd-30-billion-and-reconstruction-needs-exceed-usd-16-billion-new-assessment' }
+        ]
+      },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[[62.5, 23.5], [66.0, 23.0], [70.8, 25.0], [72.4, 29.5], [69.0, 34.0], [65.0, 33.2], [62.5, 28.5], [62.5, 23.5]]]
+      }
+    },
+    {
+      type: 'Feature',
+      properties: {
+        id: 'maui-2023-wildfires',
+        name: 'Maui wildfire impact region',
+        category: 'wildfire',
+        scope: 'world',
+        scale: 'regional',
+        summary: 'Approximate region around the 2023 Maui wildfires, including the Lahaina area; not a current fire perimeter.',
+        events: [
+          { name: 'Maui wildfires', date: '2023-08-08', severity: 'Severe', active: false, description: 'Wildfires devastated Lahaina and other parts of Maui, destroying homes and prompting a major emergency response.', sourceLabel: 'FEMA disaster record', sourceUrl: 'https://www.fema.gov/disaster/4724' }
+        ]
+      },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[[-157.3, 20.5], [-155.9, 20.5], [-155.9, 21.2], [-157.2, 21.2], [-157.3, 20.5]]]
+      }
+    },
+    {
+      type: 'Feature',
+      properties: {
+        id: 'gulf-coast-hurricane-katrina',
+        name: 'Gulf Coast Hurricane Katrina impact region',
+        category: 'cyclone',
+        scope: 'world',
+        scale: 'regional',
+        summary: 'Approximate Gulf Coast region affected by Hurricane Katrina; this is a historical impact area, not a forecast track or warning.',
+        events: [
+          { name: 'Hurricane Katrina', date: '2005-08-29', severity: 'Severe', active: false, description: 'Storm surge, extreme winds, and levee failures caused catastrophic flooding and damage along the U.S. Gulf Coast.', sourceLabel: 'U.S. National Hurricane Center report', sourceUrl: 'https://www.nhc.noaa.gov/data/tcr/AL122005_Katrina.pdf' }
+        ]
+      },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[[-93.5, 28.0], [-89.0, 27.5], [-88.0, 30.5], [-90.0, 31.7], [-93.0, 30.8], [-93.5, 28.0]]]
+      }
     }
   ],
   indiaPins: [
