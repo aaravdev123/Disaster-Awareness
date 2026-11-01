@@ -84,6 +84,27 @@ def validate_image(image_bytes: bytes) -> ImagePreflight:
     )
 
 
+def is_previewable_image(image_bytes: bytes) -> bool:
+    """Return whether a bounded upload can be decoded safely for dashboard preview."""
+    if not image_bytes or len(image_bytes) > MAX_IMAGE_BYTES:
+        return False
+    try:
+        with Image.open(BytesIO(image_bytes)) as image:
+            if image.format not in SUPPORTED_IMAGE_FORMATS:
+                return False
+            width, height = image.size
+            if (
+                width < 1
+                or height < 1
+                or width * height > MAX_IMAGE_PIXELS
+            ):
+                return False
+            image.verify()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+        return False
+    return True
+
+
 async def fetch_weather(
     location: Optional[str] = None,
     latitude: Optional[float] = None,

@@ -1,29 +1,32 @@
-"""FastAPI assessment service and Streamlit disaster-risk dashboard.
+"""Local Streamlit dashboard and optional FastAPI disaster-risk API.
 
-Run the API with ``uvicorn app:api`` and the dashboard with
-``streamlit run app.py``. The dashboard sends assessments to the API process.
+Run the dashboard with ``streamlit run app.py``. It performs inference in-process;
+run ``uvicorn app:api`` separately only when you need the HTTP API.
 """
 
 from __future__ import annotations
 
+import asyncio
+import base64
+import hashlib
 import json
-import os
 from datetime import datetime, timezone
 from typing import Dict, Optional
+from uuid import uuid4
 
-import requests
 import streamlit as st
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.responses import JSONResponse
 
-from model_engine import MultimodalRiskEngine
+from model_engine import ImageDomainError, MultimodalRiskEngine
 from utils import (
     MAX_IMAGE_BYTES,
     ImageValidationError,
     WeatherLookupError,
     fetch_weather,
+    is_previewable_image,
     validate_image,
 )
 
@@ -130,6 +133,102 @@ def _safety_checklist(level: str) -> list:
     return checklist
 
 
+def _dashboard_input_signature(
+    metrics: Dict[str, float],
+    image_bytes: Optional[bytes],
+    location: Optional[str],
+    latitude: Optional[float],
+    longitude: Optional[float],
+    use_live_weather: bool,
+) -> str:
+    """Identify the exact dashboard inputs behind a displayed assessment."""
+    payload = {
+        "metrics": metrics,
+        "image_sha256": (
+            hashlib.sha256(image_bytes).hexdigest() if image_bytes is not None else None
+        ),
+        "location": location,
+        "latitude": latitude,
+        "longitude": longitude,
+        "use_live_weather": use_live_weather,
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, allow_nan=False).encode("utf-8")
+    ).hexdigest()
+
+
+def _build_assessment_report(
+    metrics: RiskMetrics,
+    weather_data: Optional[dict],
+    location: Optional[str],
+    latitude: Optional[float],
+    longitude: Optional[float],
+    image_bytes: Optional[bytes],
+    preflight,
+) -> dict:
+    """Run local model inference and build the shared API/dashboard report."""
+    metric_dict = metrics.model_dump()
+    tabular_score, tabular_components = _engine.score_environment(metric_dict)
+    vision = _engine.score_image(image_bytes) if image_bytes is not None else None
+    if vision is not None and vision["out_of_domain"]:
+        raise ValueError(
+            "The disaster-image classifier could not identify a sufficiently "
+            "confident disaster class. Try a clearer photo of fire, flooding, or "
+            "earthquake damage, or assess without an image."
+        )
+
+    if vision is None:
+        risk_score = tabular_score * 100
+        fusion_weights = {"vision": 0.0, "tabular": 1.0}
+    else:
+        risk_score = (0.40 * float(vision["score"]) + 0.60 * tabular_score) * 100
+        fusion_weights = {"vision": 0.40, "tabular": 0.60}
+    risk_score = round(risk_score, 1)
+    level = _risk_level(risk_score)
+
+    return {
+        "assessment_id": uuid4().hex[:16],
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "site": {
+            "location_name": weather_data["location_name"] if weather_data else location,
+            "latitude": weather_data["latitude"] if weather_data else latitude,
+            "longitude": weather_data["longitude"] if weather_data else longitude,
+        },
+        "metrics": metric_dict,
+        "weather_baseline": weather_data,
+        "image_preflight": (
+            {
+                "width": preflight.width,
+                "height": preflight.height,
+                "format": preflight.image_format,
+                "blur_variance": preflight.blur_variance,
+            }
+            if preflight
+            else None
+        ),
+        "vision": vision,
+        "tabular": {
+            "score": round(tabular_score, 4),
+            "component_signals": tabular_components,
+            "method": "Weighted thresholds; not a trained or calibrated model",
+        },
+        "fusion": {
+            "weights": fusion_weights,
+            "risk_index_pct": risk_score,
+            "alert_level": level,
+        },
+        "safety_checklist": _safety_checklist(level),
+        "limitations": [
+            "This educational screening tool is not an official forecast, warning, or evacuation instruction.",
+            "The vision model is community fine-tuned on aerial disaster imagery; its published model card does not provide numeric evaluation results.",
+            "The four-class vision score is the classifier probability mass on Earthquake, Fire, and Flood; it is not calibrated for disaster severity and may misclassify unrelated images.",
+            "The tabular score uses transparent heuristic thresholds and is not empirically calibrated.",
+            "Weather readings are provider baselines and may differ from conditions at the site.",
+            "Follow local emergency services and official weather authorities.",
+        ],
+    }
+
+
 @api.get("/health")
 async def health() -> dict:
     """Return service status without triggering model downloads."""
@@ -233,85 +332,31 @@ async def assess(
         finally:
             await image.close()
 
-    metric_dict = metrics.model_dump()
-    tabular_score, tabular_components = _engine.score_environment(metric_dict)
-    vision = None
-    if image_bytes is not None:
-        try:
-            vision = await run_in_threadpool(_engine.score_image, image_bytes)
-        except RuntimeError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-        if vision["out_of_domain"]:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "The vision model has low confidence that this image is within "
-                    "its supported ImageNet label space. Try a clearer, relevant "
-                    "environmental image or assess without an image."
-                ),
-            )
-
-    if vision is None:
-        risk_score = tabular_score * 100
-        fusion_weights = {"vision": 0.0, "tabular": 1.0}
-    else:
-        risk_score = (0.40 * float(vision["score"]) + 0.60 * tabular_score) * 100
-        fusion_weights = {"vision": 0.40, "tabular": 0.60}
-    risk_score = round(risk_score, 1)
-    level = _risk_level(risk_score)
-
-    return {
-        "assessment_id": os.urandom(8).hex(),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "site": {
-            "location_name": weather_data["location_name"] if weather_data else location,
-            "latitude": weather_data["latitude"] if weather_data else latitude,
-            "longitude": weather_data["longitude"] if weather_data else longitude,
-        },
-        "metrics": metric_dict,
-        "weather_baseline": weather_data,
-        "image_preflight": (
-            {
-                "width": preflight.width,
-                "height": preflight.height,
-                "format": preflight.image_format,
-                "blur_variance": preflight.blur_variance,
-            }
-            if preflight
-            else None
-        ),
-        "vision": vision,
-        "tabular": {
-            "score": round(tabular_score, 4),
-            "component_signals": tabular_components,
-            "method": "Weighted thresholds; not a trained or calibrated model",
-        },
-        "fusion": {
-            "weights": fusion_weights,
-            "risk_index_pct": risk_score,
-            "alert_level": level,
-        },
-        "safety_checklist": _safety_checklist(level),
-        "limitations": [
-            "This educational screening tool is not an official forecast, warning, or evacuation instruction.",
-            "EfficientNet-B0 is ImageNet-pretrained, not disaster-trained; its visual score is a weak proxy.",
-            "The tabular score uses transparent heuristic thresholds and is not empirically calibrated.",
-            "Weather readings are provider baselines and may differ from conditions at the site.",
-            "Follow local emergency services and official weather authorities.",
-        ],
-    }
+    try:
+        return await run_in_threadpool(
+            _build_assessment_report,
+            metrics,
+            weather_data,
+            location,
+            latitude,
+            longitude,
+            image_bytes,
+            preflight,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 def render_dashboard() -> None:
-    """Render the Streamlit interface and send assessments to the FastAPI service."""
+    """Render a fully local Streamlit interface and run inference in-process."""
     st.set_page_config(page_title="Disaster Risk Assessment", page_icon="🌦️", layout="wide")
     st.title("Multimodal Disaster Risk Assessment")
     st.caption(
         "Educational site screening only — not an official alert or a substitute "
         "for emergency services."
     )
-    api_url = os.getenv("DISASTER_API_URL", "http://127.0.0.1:8000").rstrip("/")
-
     st.subheader("Site location and weather baseline")
     location_mode = st.radio(
         "Location input", ("City name", "GPS coordinates"), horizontal=True
@@ -339,11 +384,13 @@ def render_dashboard() -> None:
             st.error("Enter a city name before fetching its weather.")
         else:
             try:
-                response = requests.get(
-                    f"{api_url}/weather", params=params, timeout=20
+                baseline = asyncio.run(
+                    fetch_weather(
+                        location=location if location_mode == "City name" else None,
+                        latitude=latitude if location_mode == "GPS coordinates" else None,
+                        longitude=longitude if location_mode == "GPS coordinates" else None,
+                    )
                 )
-                response.raise_for_status()
-                baseline = response.json()
                 st.session_state["rain_24h_mm"] = float(baseline["rain_24h_mm"])
                 st.session_state["wind_speed_kmh"] = float(
                     baseline["wind_speed_kmh"]
@@ -354,7 +401,7 @@ def render_dashboard() -> None:
                     "Rainfall and wind sliders were updated; ground temperature "
                     "remains a separate manual measurement."
                 )
-            except requests.RequestException as exc:
+            except WeatherLookupError as exc:
                 st.error(f"Could not fetch the weather baseline: {exc}")
             except (KeyError, ValueError) as exc:
                 st.error(f"The weather service returned incomplete data: {exc}")
@@ -426,17 +473,49 @@ def render_dashboard() -> None:
     uploaded_file = st.file_uploader(
         "Environmental image (optional)",
         type=["jpg", "jpeg", "png"],
-        help="JPEG or PNG only; maximum 10 MB. The server repeats all safety checks.",
+        help="JPEG or PNG only; maximum 10 MB. The app checks it before inference.",
     )
     if uploaded_file is not None and uploaded_file.size > MAX_IMAGE_BYTES:
         st.error("Image exceeds the 10 MB upload limit.")
+        image_bytes = None
+    else:
+        image_bytes = uploaded_file.getvalue() if uploaded_file is not None else None
+    if image_bytes:
+        if is_previewable_image(image_bytes):
+            st.image(
+                image_bytes,
+                caption="Uploaded image — shown as received, before analysis",
+                use_container_width=True,
+            )
+        else:
+            st.warning(
+                "The uploaded file could not be safely previewed. Image validation "
+                "will reject it before assessment."
+            )
+
+    dashboard_metrics = {
+        "rain_24h_mm": rain,
+        "slope_angle_deg": slope,
+        "soil_moisture_pct": moisture,
+        "wind_speed_kmh": wind,
+        "ground_temp_c": ground_temperature,
+    }
+    input_signature = _dashboard_input_signature(
+        dashboard_metrics,
+        image_bytes,
+        location if location_mode == "City name" else None,
+        latitude if location_mode == "GPS coordinates" else None,
+        longitude if location_mode == "GPS coordinates" else None,
+        use_live_weather,
+    )
 
     if st.button("Assess disaster risk", type="primary"):
         st.session_state.pop("assessment_report", None)
+        st.session_state.pop("assessment_input_signature", None)
         if uploaded_file is not None and uploaded_file.size > MAX_IMAGE_BYTES:
             st.error("Choose an image smaller than 10 MB.")
             return
-        image_bytes = uploaded_file.getvalue() if uploaded_file is not None else None
+        preflight = None
         if image_bytes:
             try:
                 preflight = validate_image(image_bytes)
@@ -449,52 +528,65 @@ def render_dashboard() -> None:
                 st.error(str(exc))
                 return
 
-        form_data = {
-            "slope_angle_deg": slope,
-            "soil_moisture_pct": moisture,
-            "ground_temp_c": ground_temperature,
-        }
-        if not (use_live_weather and location_ready):
-            form_data["rain_24h_mm"] = rain
-            form_data["wind_speed_kmh"] = wind
-        if location_mode == "City name" and location:
-            form_data["location"] = location
-        elif location_mode == "GPS coordinates":
-            form_data["latitude"] = latitude
-            form_data["longitude"] = longitude
-
-        files = (
-            {
-                "image": (
-                    uploaded_file.name,
-                    image_bytes,
-                    uploaded_file.type or "application/octet-stream",
-                )
-            }
-            if image_bytes
-            else None
-        )
+        weather_data = None
         try:
-            response = requests.post(
-                f"{api_url}/assess",
-                data=form_data,
-                files=files,
-                timeout=120,
+            if use_live_weather and location_ready:
+                weather_data = asyncio.run(
+                    fetch_weather(
+                        location=location if location_mode == "City name" else None,
+                        latitude=latitude if location_mode == "GPS coordinates" else None,
+                        longitude=longitude if location_mode == "GPS coordinates" else None,
+                    )
+                )
+                st.session_state["weather_baseline"] = weather_data
+            metrics = RiskMetrics(
+                rain_24h_mm=(
+                    weather_data["rain_24h_mm"] if weather_data else rain
+                ),
+                slope_angle_deg=slope,
+                soil_moisture_pct=moisture,
+                wind_speed_kmh=(
+                    weather_data["wind_speed_kmh"] if weather_data else wind
+                ),
+                ground_temp_c=ground_temperature,
             )
-            response.raise_for_status()
-            st.session_state["assessment_report"] = response.json()
-        except requests.HTTPError as exc:
-            try:
-                detail = response.json().get("detail", str(exc))
-            except ValueError:
-                detail = str(exc)
-            st.error(f"Assessment failed: {detail}")
+            st.session_state["assessment_report"] = _build_assessment_report(
+                metrics=metrics,
+                weather_data=weather_data,
+                location=location if location_mode == "City name" else None,
+                latitude=latitude if location_mode == "GPS coordinates" else None,
+                longitude=longitude if location_mode == "GPS coordinates" else None,
+                image_bytes=image_bytes,
+                preflight=preflight,
+            )
+            st.session_state["assessment_input_signature"] = input_signature
+        except WeatherLookupError as exc:
+            st.error(f"Could not fetch live weather: {exc}")
             return
-        except requests.RequestException as exc:
-            st.error(f"Could not reach the assessment API at {api_url}: {exc}")
+        except ImageDomainError as exc:
+            st.error(str(exc))
+            st.write("Top image-classifier predictions:")
+            st.dataframe(exc.predictions, hide_index=True, use_container_width=True)
+            st.info(
+                "The image was not scored or included in a risk assessment. "
+                "You can still assess the site using its environmental measurements."
+            )
+            return
+        except ValidationError as exc:
+            st.error(f"Invalid site measurements: {exc}")
+            return
+        except ValueError as exc:
+            st.error(str(exc))
+            return
+        except RuntimeError as exc:
+            st.error(f"Image inference could not run: {exc}")
             return
 
-    report = st.session_state.get("assessment_report")
+    report = (
+        st.session_state.get("assessment_report")
+        if st.session_state.get("assessment_input_signature") == input_signature
+        else None
+    )
     if report:
         fusion = report["fusion"]
         score_column, level_column = st.columns(2)
@@ -514,17 +606,76 @@ def render_dashboard() -> None:
         )
         st.progress(fusion["risk_index_pct"] / 100.0)
         if report["vision"] is not None:
+            vision = report["vision"]
             st.write(
-                f"Vision proxy: {report['vision']['score']:.0%} · "
+                f"Vision proxy: {vision['score']:.0%} · "
                 f"Environmental score: {report['tabular']['score']:.0%}"
             )
-            st.caption(
-                "Vision labels: "
-                + (
-                    ", ".join(report["vision"]["matched_hazard_labels"])
-                    or "no mapped hazard label detected"
+            original_column, analysis_column = st.columns(2)
+            with original_column:
+                st.image(
+                    image_bytes,
+                    caption="Original uploaded image",
+                    use_container_width=True,
                 )
+            with analysis_column:
+                overlay_bytes = base64.b64decode(
+                    vision["explanation_image_base64"], validate=True
+                )
+                st.image(
+                    overlay_bytes,
+                    caption="Grad-CAM attention heatmap and analyzed-region boxes",
+                    use_container_width=True,
+                )
+            st.markdown(f"**Analyzed classifier label:** `{vision['target_label']}`")
+            target_prediction = next(
+                (
+                    prediction
+                    for prediction in vision["matched_hazard_predictions"]
+                    if prediction["label"] == vision["target_label"]
+                ),
+                None,
             )
+            if target_prediction:
+                st.caption(
+                    f"Disaster class confidence: "
+                    f"{target_prediction['probability']:.1%}. This is class "
+                    "confidence, not a probability that a disaster is occurring."
+                )
+            st.caption(vision["explanation_note"])
+            st.markdown("**Regions that most influenced the label**")
+            if vision["saliency_regions"]:
+                region_rows = [
+                    {
+                        "Region": f"Region {index}",
+                        "Image bounds (pixels)": (
+                            f"x={region['x']}, y={region['y']}, "
+                            f"w={region['width']}, h={region['height']}"
+                        ),
+                        "Mean attention": f"{region['activation_pct']:.1f}%",
+                        "Image area": f"{region['area_pct']:.1f}%",
+                    }
+                    for index, region in enumerate(
+                        vision["saliency_regions"], start=1
+                    )
+                ]
+                st.dataframe(region_rows, hide_index=True, use_container_width=True)
+            else:
+                st.info(
+                    "The model did not isolate a distinct high-attention region."
+                )
+            with st.expander("Top image classifier predictions"):
+                st.dataframe(
+                    [
+                        {
+                            "Disaster class": item["label"],
+                            "Class confidence": f"{item['probability']:.1%}",
+                        }
+                        for item in vision["top_predictions"]
+                    ],
+                    hide_index=True,
+                    use_container_width=True,
+                )
         else:
             st.write(
                 f"Environmental score: {report['tabular']['score']:.0%} "
@@ -535,7 +686,12 @@ def render_dashboard() -> None:
         for action in report["safety_checklist"]:
             st.markdown(f"- {action}")
         with st.expander("Assessment details and limitations"):
-            st.json(report)
+            details = json.loads(json.dumps(report))
+            if details.get("vision"):
+                details["vision"]["explanation_image_base64"] = (
+                    "Omitted from on-screen details; included in downloaded JSON."
+                )
+            st.json(details)
         st.download_button(
             "Download assessment JSON",
             data=json.dumps(report, indent=2),

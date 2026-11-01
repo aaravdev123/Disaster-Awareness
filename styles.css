@@ -889,6 +889,29 @@ select {
   color: var(--muted);
 }
 
+.community-location-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--navy);
+  font-weight: 700;
+}
+
+.community-location-input {
+  display: block;
+  width: min(100%, 32rem);
+  margin-bottom: 0.8rem;
+  border: 1px solid rgba(16, 36, 58, 0.2);
+  border-radius: 12px;
+  padding: 0.8rem 1rem;
+  color: var(--text);
+  background: var(--white);
+}
+
+.community-location-input:focus-visible {
+  outline: 3px solid rgba(57, 118, 168, 0.35);
+  outline-offset: 2px;
+}
+
 .community-location a,
 .community-card a {
   color: var(--blue);
@@ -899,6 +922,11 @@ select {
 
 .community-location .button {
   margin-bottom: 0.25rem;
+}
+
+.community-location .community-location-secondary {
+  margin: 0 0 0.25rem 0.4rem;
+  border-color: rgba(16, 36, 58, 0.15);
 }
 
 .community-location .button:disabled {

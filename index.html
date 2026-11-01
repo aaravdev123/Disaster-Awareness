@@ -435,16 +435,25 @@
 
           <div class="community-location">
             <p>
-              Find nearby disaster-awareness organizations using an approximate location from your public IP.
-              When you click, your IP is sent to
-              <a href="https://ipapi.co/" target="_blank" rel="noopener noreferrer">ipapi.co</a>
-              for lookup, and approximate coordinates are sent to the
-              <a href="https://wiki.openstreetmap.org/wiki/Overpass_API" target="_blank" rel="noopener noreferrer">OpenStreetMap Overpass API</a>
-              to search nearby mapped places. DisasterReady does not store your location. Results are map listings, not confirmed volunteer openings or live campaigns; verify details with each organization.
-              Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>.
+              IP-based locations can be inaccurate. Enter a city or postal code, use your device location, or choose
+              the approximate IP lookup. Device location requires permission. Google search links are not verified listings.
             </p>
+            <label class="community-location-label" for="community-location-input">Search area</label>
+            <input
+              id="community-location-input"
+              class="community-location-input"
+              type="search"
+              placeholder="City, neighborhood, or postal code"
+              autocomplete="address-level2"
+            />
             <button class="button button-primary" id="community-location-button" type="button">
-              Find opportunities near me
+              Use approximate IP location
+            </button>
+            <button class="button button-secondary community-location-secondary" id="community-device-location-button" type="button">
+              Use my device location
+            </button>
+            <button class="button button-secondary community-location-secondary" id="community-search-button" type="button">
+              Search this area
             </button>
             <p class="community-location-status" id="community-location-status" role="status" aria-live="polite"></p>
           </div>
@@ -453,21 +462,21 @@
             <article class="community-card">
               <h3>Volunteer Opportunities</h3>
               <div data-community-results="volunteer" class="community-results">
-                <p>Use the button above to find nearby mapped community organizations.</p>
+                <p>Use the button above to find nearby volunteer opportunities.</p>
               </div>
             </article>
 
             <article class="community-card">
               <h3>Awareness Campaigns</h3>
               <div data-community-results="campaigns" class="community-results">
-                <p>Use the button above to find nearby mapped community organizations.</p>
+                <p>Use the button above to find nearby disaster awareness campaigns.</p>
               </div>
             </article>
 
             <article class="community-card">
               <h3>Community Education</h3>
               <div data-community-results="education" class="community-results">
-                <p>Use the button above to find nearby schools and community education venues.</p>
+                <p>Use the button above to find nearby disaster education programs.</p>
               </div>
             </article>
           </div>

@@ -1,9 +1,9 @@
 # Disaster Risk Assessment Platform
 
-This Python service adds an educational, multimodal site-screening tool alongside
-the existing DisasterReady website. It includes a FastAPI API, a Streamlit
-dashboard, an EfficientNet-B0 image signal, deterministic environmental scoring,
-and optional Open-Meteo weather baselines.
+This Python application adds an educational, multimodal site-screening tool
+alongside the existing DisasterReady website. It includes a local Streamlit
+dashboard, an optional FastAPI API, a disaster-fine-tuned ResNet50 image model,
+deterministic environmental scoring, and optional Open-Meteo weather baselines.
 
 ## Run locally
 
@@ -14,50 +14,77 @@ environment:
 python -m pip install -r requirements.txt
 ```
 
-Start the API in one terminal:
-
-```bash
-uvicorn app:api --host 127.0.0.1 --port 8000
-```
-
-Start the dashboard in another terminal:
+Start the dashboard:
 
 ```bash
 streamlit run app.py
 ```
 
-The dashboard defaults to `http://127.0.0.1:8000`. Set `DISASTER_API_URL` if the
-API is hosted elsewhere. The first assessment with an image downloads the
-official torchvision EfficientNet-B0 ImageNet weights; later runs use the local
-model cache. Weather lookup uses the public Open-Meteo geocoding and forecast
-APIs and requires network access.
+Open the local URL printed by Streamlit, usually `http://localhost:8501`. The
+dashboard performs scoring and image inference in the same local process; it
+does not require a cloud host or a separately running API. Disaster image
+inference uses the bundled, inference-only ResNet50 weights at
+[`assets/models/disaster_resnet50_fp16.pth`](./assets/models/disaster_resnet50_fp16.pth)
+(about 45 MiB). The checkpoint loads locally with PyTorch's
+`weights_only=True` mode; it is not downloaded from Hugging Face at runtime.
 
-The uploader accepts JPEG and PNG files up to 10 MB. The dashboard performs
-format, size, decode, dimensions, and blur checks before submission; the API
-repeats these checks independently. Weather can be queried by place name or
-latitude/longitude. Rainfall and wind can be filled from the returned baseline;
-soil moisture, slope, and ground temperature remain site measurements.
+After installing Python packages, live weather is the only feature that needs
+internet access. Weather lookup is optional and uses the public Open-Meteo
+geocoding and forecast APIs. To run fully offline, leave live weather disabled
+and enter site measurements manually.
 
-## API
+The uploader accepts JPEG and PNG files up to 10 MB. The dashboard checks image
+format, size, decodeability, dimensions, and blur before inference. Weather can
+be queried by place name or latitude/longitude. Rainfall and wind can be filled
+from the returned baseline; soil moisture, slope, and ground temperature remain
+site measurements.
 
-- `GET /health` checks service availability without loading model weights.
-- `GET /weather?location=...` or `GET /weather?latitude=...&longitude=...`
-  fetches a weather baseline.
-- `POST /assess` accepts multipart measurements and an optional JPEG/PNG image.
-  Supply all five measurements, or omit rainfall and wind when providing a
-  location so they can be filled from live weather.
-- Interactive API documentation is available at `/docs`.
+Uploaded images are previewed before analysis. Image inference requires at least
+one high-confidence disaster class (`Earthquake`, `Fire`, or `Flood`); images
+classified as `Non-Damage` or below 90% class confidence are rejected and the
+predictions are shown. Accepted images display the original beside a Grad-CAM
+attention overlay, highlighted regions, pixel bounds, and the classifier labels
+that influenced the result. These boxes explain classifier attention; they are
+not object detections or verified hazard boundaries.
+
+The vision checkpoint is
+[`DanielCruz09/disaster-image-classifier`](https://huggingface.co/DanielCruz09/disaster-image-classifier),
+a ResNet50 fine-tuned for `Earthquake`, `Fire`, `Flood`, and `Non-Damage` classes
+using an AIDERv2-based aerial-image dataset. Its model card reports training
+details but does not publish numeric evaluation results; it is a community model,
+not independently validated by this project. The training dataset is described
+at [DanielCruz09/natural_disasters](https://huggingface.co/datasets/DanielCruz09/natural_disasters)
+and is based on AIDERv2. The dataset card declares CC BY 4.0; the model card
+declares BSD-3-Clause. This repository bundles that publisher-trained checkpoint
+in FP16 storage format; it was not trained or fine-tuned on this computer.
+See [`assets/models/model-provenance.json`](./assets/models/model-provenance.json)
+for the pinned source revision and bundled-file SHA-256.
+
+## Optional API
+
+If another local program needs HTTP access, start the optional API in a separate
+terminal:
+
+```bash
+uvicorn app:api --host 127.0.0.1 --port 8000
+```
+
+The API provides `GET /health`, `GET /weather`, `POST /assess`, and interactive
+documentation at `/docs`. The dashboard itself does not call these endpoints.
 
 ## Important limitations
 
 This is a screening and preparedness aid, not an operational early-warning
 system. The tabular score uses hand-set, interpretable thresholds; it has not
-been trained or calibrated against disaster outcomes. EfficientNet-B0 is
-pretrained on ImageNet, not disaster imagery, and its visual score is only a
-weak label-based proxy. Its low-confidence check is a heuristic, not a reliable
-out-of-distribution detector. The 40%/60% fusion weights and alert bands are
-product defaults, not validated safety thresholds. Weather-provider values may
-not represent conditions at the exact site.
+been trained or calibrated against disaster outcomes. The community disaster
+classifier is fine-tuned on aerial imagery for four classes, but numeric
+evaluation results are not published in its model card. It may not generalize
+to ground-level photos, and its class score is not a calibrated probability of
+disaster severity. The 90% confidence gate is a conservative heuristic, not a reliable
+out-of-distribution detector. Grad-CAM rectangles show classifier attention
+rather than verified objects or hazards. The 40%/60% fusion weights and alert
+bands are product defaults, not validated safety thresholds.
+Weather-provider values may not represent conditions at the exact site.
 
 Do not use the index to make evacuation or emergency decisions. Always follow
 official local authorities and emergency services. Before public deployment,
