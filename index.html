@@ -433,35 +433,42 @@
             <h2>Together, We Can Make a Difference.</h2>
           </div>
 
+          <div class="community-location">
+            <p>
+              Find nearby disaster-awareness organizations using an approximate location from your public IP.
+              When you click, your IP is sent to
+              <a href="https://ipapi.co/" target="_blank" rel="noopener noreferrer">ipapi.co</a>
+              for lookup, and approximate coordinates are sent to the
+              <a href="https://wiki.openstreetmap.org/wiki/Overpass_API" target="_blank" rel="noopener noreferrer">OpenStreetMap Overpass API</a>
+              to search nearby mapped places. DisasterReady does not store your location. Results are map listings, not confirmed volunteer openings or live campaigns; verify details with each organization.
+              Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>.
+            </p>
+            <button class="button button-primary" id="community-location-button" type="button">
+              Find opportunities near me
+            </button>
+            <p class="community-location-status" id="community-location-status" role="status" aria-live="polite"></p>
+          </div>
+
           <div class="community-grid">
             <article class="community-card">
               <h3>Volunteer Opportunities</h3>
-              <ul>
-                <li>Food distribution</li>
-                <li>Medical assistance</li>
-                <li>Community awareness</li>
-                <li>Rehabilitation activities</li>
-              </ul>
+              <div data-community-results="volunteer" class="community-results">
+                <p>Use the button above to find nearby mapped community organizations.</p>
+              </div>
             </article>
 
             <article class="community-card">
               <h3>Awareness Campaigns</h3>
-              <ul>
-                <li>Flood safety</li>
-                <li>Earthquake preparedness</li>
-                <li>Fire prevention</li>
-                <li>Climate-related disaster risks</li>
-              </ul>
+              <div data-community-results="campaigns" class="community-results">
+                <p>Use the button above to find nearby mapped community organizations.</p>
+              </div>
             </article>
 
             <article class="community-card">
               <h3>Community Education</h3>
-              <ul>
-                <li>Safety guides</li>
-                <li>Awareness posters</li>
-                <li>School preparedness resources</li>
-                <li>Family emergency planning</li>
-              </ul>
+              <div data-community-results="education" class="community-results">
+                <p>Use the button above to find nearby schools and community education venues.</p>
+              </div>
             </article>
           </div>
         </div>

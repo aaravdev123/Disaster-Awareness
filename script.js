@@ -707,6 +707,279 @@ function bindModalEvents() {
   });
 }
 
+const communityCategories = {
+  volunteer: 'Volunteer Opportunities',
+  campaigns: 'Awareness Campaigns',
+  education: 'Community Education'
+};
+
+const communityFallbackResources = {
+  global: {
+    volunteer: [
+      {
+        name: 'International Federation of Red Cross and Red Crescent Societies',
+        area: 'Global network',
+        description: 'Contact your national Red Cross or Red Crescent society to ask about local volunteer opportunities.',
+        url: 'https://www.ifrc.org/'
+      }
+    ],
+    campaigns: [
+      {
+        name: 'United Nations Office for Disaster Risk Reduction',
+        area: 'Global resource',
+        description: 'Explore disaster risk reduction campaigns and community awareness resources.',
+        url: 'https://www.undrr.org/'
+      }
+    ],
+    education: [
+      {
+        name: 'International Federation of Red Cross and Red Crescent Societies',
+        area: 'Global network',
+        description: 'Find preparedness and community education resources through the IFRC network.',
+        url: 'https://www.ifrc.org/'
+      }
+    ]
+  },
+  IN: {
+    volunteer: [
+      {
+        name: 'Indian Red Cross Society',
+        area: 'India-wide',
+        description: 'Contact your local branch to ask about disaster relief and community preparedness volunteering.',
+        url: 'https://indianredcross.org/'
+      },
+      {
+        name: 'Goonj',
+        area: 'India-wide',
+        description: 'Learn about disaster relief and community recovery work and ask about current local opportunities.',
+        url: 'https://goonj.org/'
+      }
+    ],
+    campaigns: [
+      {
+        name: 'National Disaster Management Authority',
+        area: 'India-wide',
+        description: 'Official disaster management guidance and public preparedness information.',
+        url: 'https://ndma.gov.in/'
+      }
+    ],
+    education: [
+      {
+        name: 'National Disaster Management Authority',
+        area: 'India-wide',
+        description: 'Explore disaster preparedness and safety information for households, schools, and communities.',
+        url: 'https://ndma.gov.in/'
+      },
+      {
+        name: 'India Meteorological Department',
+        area: 'India-wide',
+        description: 'Official weather information and safety advisories for weather-related hazards.',
+        url: 'https://mausam.imd.gov.in/'
+      }
+    ]
+  }
+};
+
+function safeExternalUrl(value) {
+  if (!value) return null;
+
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function renderCommunityFallback(container, resources) {
+  const cards = resources.map((resource) => {
+    const card = document.createElement('article');
+    card.className = 'community-result-card';
+
+    const heading = document.createElement('h4');
+    heading.textContent = resource.name;
+
+    const area = document.createElement('p');
+    area.className = 'community-result-area';
+    area.textContent = resource.area;
+
+    const description = document.createElement('p');
+    description.textContent = resource.description;
+
+    const link = document.createElement('a');
+    link.href = resource.url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = `Visit ${resource.name}`;
+
+    card.append(heading, area, description, link);
+    return card;
+  });
+  container.replaceChildren(...cards);
+}
+
+function renderCommunityPlaces(container, places, category) {
+  if (!places.length) {
+    const message = document.createElement('p');
+    message.textContent = `No nearby mapped places found for ${communityCategories[category].toLowerCase()}.`;
+    container.replaceChildren(message);
+    return;
+  }
+
+  const cards = places.map((place) => {
+    const card = document.createElement('article');
+    card.className = 'community-result-card';
+
+    const heading = document.createElement('h4');
+    heading.textContent = place.tags.name || 'Unnamed mapped place';
+
+    const area = document.createElement('p');
+    area.className = 'community-result-area';
+    const address = place.tags['addr:full']
+      || [
+        place.tags['addr:housenumber'],
+        place.tags['addr:street'],
+        place.tags['addr:city'],
+        place.tags['addr:postcode']
+      ].filter(Boolean).join(', ');
+    area.textContent = address || 'Address not listed in OpenStreetMap';
+
+    const description = document.createElement('p');
+    const placeType = place.tags.office
+      || place.tags.amenity
+      || place.tags.club
+      || 'community place';
+    description.textContent = `OpenStreetMap category: ${placeType}. Verify that it offers relevant programs before visiting.`;
+
+    const mapUrl = `https://www.openstreetmap.org/${place.type}/${place.id}`;
+    const mapLink = document.createElement('a');
+    mapLink.href = mapUrl;
+    mapLink.target = '_blank';
+    mapLink.rel = 'noopener noreferrer';
+    mapLink.textContent = 'View on OpenStreetMap';
+    card.append(heading, area, description, mapLink);
+
+    const websiteUrl = safeExternalUrl(place.tags.website || place.tags['contact:website'] || place.tags.url);
+    if (websiteUrl) {
+      const websiteLink = document.createElement('a');
+      websiteLink.href = websiteUrl;
+      websiteLink.target = '_blank';
+      websiteLink.rel = 'noopener noreferrer';
+      websiteLink.textContent = 'Visit website';
+      card.append(websiteLink);
+    }
+    return card;
+  });
+
+  container.replaceChildren(...cards);
+}
+
+function classifyCommunityPlace(place) {
+  const { amenity, office, club } = place.tags;
+  const organization = ['ngo', 'charity', 'association', 'foundation'].includes(office);
+  const communityVenue = amenity === 'community_centre';
+  const educationalVenue = ['school', 'college', 'university', 'library'].includes(amenity);
+  const volunteerGroup = ['volunteer', 'service', 'social'].includes(club);
+  const categories = [];
+
+  if (organization || volunteerGroup) categories.push('volunteer');
+  if (organization || communityVenue) categories.push('campaigns');
+  if (communityVenue || educationalVenue) categories.push('education');
+  return categories;
+}
+
+async function findNearbyCommunityPlaces(location) {
+  const { latitude, longitude } = location;
+  const query = `
+    [out:json][timeout:10];
+    (
+      nwr["office"~"^(ngo|charity|association|foundation)$",i](around:5000,${latitude},${longitude});
+      nwr["club"~"^(volunteer|service|social)$",i](around:5000,${latitude},${longitude});
+      nwr["amenity"~"^(community_centre|school|college|university|library)$",i](around:5000,${latitude},${longitude});
+    );
+    out center tags 30;
+  `;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const response = await fetch('https://overpass.kumi.systems/api/interpreter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body: new URLSearchParams({ data: query }),
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`OpenStreetMap search failed with status ${response.status}`);
+    }
+
+    const data = await response.json();
+    return (data.elements || []).map((element) => ({
+      ...element,
+      tags: element.tags || {},
+      latitude: element.lat ?? element.center?.lat,
+      longitude: element.lon ?? element.center?.lon
+    }));
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function initialiseCommunityAction() {
+  const button = document.getElementById('community-location-button');
+  const status = document.getElementById('community-location-status');
+  if (!button || !status) return;
+
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    status.textContent = 'Estimating your area and searching nearby OpenStreetMap places…';
+    let area = '';
+    let countryCode = '';
+
+    try {
+      const response = await fetch('https://ipapi.co/json/');
+      if (!response.ok) {
+        throw new Error(`Location lookup failed with status ${response.status}`);
+      }
+
+      const location = await response.json();
+      if (location.error) {
+        throw new Error(location.reason || 'Location lookup was rejected');
+      }
+
+      area = [location.city, location.region, location.country_name]
+        .filter((part, index, parts) => part && parts.indexOf(part) === index)
+        .join(', ');
+      countryCode = location.country_code || '';
+      if (!area || !Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)) {
+        throw new Error('The location provider did not return a usable area and coordinates');
+      }
+
+      const resultContainers = document.querySelectorAll('[data-community-results]');
+      const places = await findNearbyCommunityPlaces(location);
+      [...resultContainers].forEach((container) => {
+        const category = container.dataset.communityResults;
+        const categoryPlaces = places.filter((place) => classifyCommunityPlace(place).includes(category));
+        renderCommunityPlaces(container, categoryPlaces.slice(0, 8), category);
+      });
+      status.textContent = `Nearby mapped places for ${area}. Listings may be incomplete and are not confirmed disaster programs or volunteer openings.`;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('Could not load OpenStreetMap community results:', errorMessage);
+      const resources = communityFallbackResources[countryCode] || communityFallbackResources.global;
+      document.querySelectorAll('[data-community-results]').forEach((container) => {
+        const categoryResources = resources[container.dataset.communityResults] || [];
+        renderCommunityFallback(container, categoryResources);
+      });
+      status.textContent = area
+        ? `Nearby map results are temporarily unavailable. Showing general resources for ${area}; these are not local event listings.`
+        : 'Could not estimate your location. Showing general disaster-awareness resources instead.';
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
+
 function initialiseSafetyGuide() {
   const selector = document.getElementById('disaster-select');
   if (!selector) return;
@@ -1349,6 +1622,7 @@ function initialiseHazardMap() {
 function init() {
   renderDisasterCards();
   renderChecklist();
+  initialiseCommunityAction();
   initialiseSafetyGuide();
   initialiseHazardMap();
   initialiseFinder();

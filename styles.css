@@ -876,6 +876,89 @@ select {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.community-location {
+  margin: -0.5rem 0 1.5rem;
+  padding: 1.25rem 1.4rem;
+  border: 1px solid rgba(57, 118, 168, 0.18);
+  border-radius: var(--radius);
+  background: rgba(57, 118, 168, 0.05);
+}
+
+.community-location p {
+  margin: 0 0 0.9rem;
+  color: var(--muted);
+}
+
+.community-location a,
+.community-card a {
+  color: var(--blue);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.community-location .button {
+  margin-bottom: 0.25rem;
+}
+
+.community-location .button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.community-location .community-location-status {
+  min-height: 1.6em;
+  margin: 0.4rem 0 0;
+  color: var(--navy);
+  font-weight: 600;
+}
+
+.community-card a:focus-visible,
+.community-location a:focus-visible {
+  outline: 3px solid var(--orange);
+  outline-offset: 3px;
+}
+
+.community-results {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 0.8rem;
+}
+
+.community-results > p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.community-result-card {
+  padding: 1rem;
+  border: 1px solid rgba(16, 36, 58, 0.08);
+  border-radius: 16px;
+  background: rgba(57, 118, 168, 0.04);
+}
+
+.community-result-card h4 {
+  margin: 0;
+  color: var(--navy);
+  font-size: 1rem;
+}
+
+.community-result-card p {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.community-result-card .community-result-area {
+  color: var(--blue);
+  font-weight: 700;
+}
+
+.community-result-card a {
+  display: inline-block;
+  margin-top: 0.7rem;
+}
+
 .info-card,
 .community-card,
 .update-card,
